@@ -53,8 +53,34 @@
 
     <!-- Main Content Area -->
     <div class="main-content">
-      <!-- Left: Server Cards Grid -->
+      <!-- Left: Server Cards Grid - Server Rack Cabinet -->
       <div class="servers-section">
+        <!-- Cabinet frame decorations -->
+        <div class="cabinet-frame">
+          <!-- Top frame with handles -->
+          <div class="cabinet-top">
+            <div class="handle-left"></div>
+            <div class="cabinet-label">RACK UNIT // SYS-MONITOR</div>
+            <div class="handle-right"></div>
+          </div>
+          <!-- Left rail with status LEDs -->
+          <div class="cabinet-rail-left">
+            <div class="rail-led" :class="{ active: wsConnected }"></div>
+            <div class="rail-led warning" :class="{ active: monitorStore.warningServers > 0 }"></div>
+            <div class="rail-led error" :class="{ active: monitorStore.criticalServers > 0 }"></div>
+            <div class="rail-screw"></div>
+            <div class="rail-screw"></div>
+          </div>
+          <!-- Right rail with ventilation -->
+          <div class="cabinet-rail-right">
+            <div class="vent-slots">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div class="rail-screw"></div>
+            <div class="rail-screw"></div>
+          </div>
+        </div>
+        <!-- Server cards grid -->
         <div class="servers-grid">
           <ServerCardCompact
             v-for="server in monitorStore.servers"
@@ -325,13 +351,15 @@ $cyber-red: #ff3333;
   flex-direction: column;
 }
 
-// Top Status Bar - ENLARGED
+// Top Status Bar - ENLARGED with transparency for matrix rain visibility
 .top-status-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px 32px;
-  background: rgba(0, 0, 0, 0.95);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-bottom: 2px solid rgba($cyber-cyan, 0.4);
   font-family: $font-mono;
   flex-shrink: 0;
@@ -546,149 +574,423 @@ $cyber-red: #ff3333;
   height: calc(100vh - 80px);
 }
 
-// Left: Servers Section (70%) - Server Rack / Control Room Cabinet
+// Left: Servers Section (70%) - Real Server Rack Cabinet
 .servers-section {
   flex: 7;
   min-width: 0;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+  margin: 8px 0;
 
-  // Server Rack Cabinet Background
-  background:
-    // Metal mesh/grille pattern (hexagonal holes)
-    radial-gradient(circle at center, transparent 2px, rgba(0, 0, 0, 0.15) 2px, rgba(0, 0, 0, 0.15) 3px, transparent 3px),
-    // Subtle vertical rack rail lines
-    repeating-linear-gradient(90deg,
-      transparent 0px,
-      transparent 48px,
-      rgba(40, 40, 45, 0.4) 48px,
-      rgba(40, 40, 45, 0.4) 50px,
-      transparent 50px,
-      transparent 98px,
-      rgba(40, 40, 45, 0.4) 98px,
-      rgba(40, 40, 45, 0.4) 100px
-    ),
-    // Horizontal rack unit lines
-    repeating-linear-gradient(0deg,
-      transparent 0px,
-      transparent 23px,
-      rgba(30, 30, 35, 0.3) 23px,
-      rgba(30, 30, 35, 0.3) 24px
-    ),
-    // Main cabinet gradient
-    linear-gradient(180deg,
-      rgba(18, 18, 22, 0.85) 0%,
-      rgba(12, 12, 16, 0.9) 30%,
-      rgba(8, 8, 12, 0.92) 70%,
-      rgba(5, 5, 8, 0.85) 100%
-    );
-  background-size:
-    12px 12px,
-    100px 100%,
-    100% 24px,
-    100% 100%;
-  border-radius: 6px;
-  border: 2px solid rgba(50, 50, 55, 0.6);
+  // Server Rack Cabinet Frame - Main container with 3D depth
+  background: linear-gradient(180deg,
+    #1a1a1e 0%,
+    #141418 50%,
+    #0e0e12 100%
+  );
+  border-radius: 8px;
+
+  // Cabinet outer frame (thick metal border)
+  border: none;
   box-shadow:
-    // Outer cabinet frame shadow
-    0 0 30px rgba(0, 0, 0, 0.5),
-    0 10px 40px rgba(0, 0, 0, 0.4),
-    // Inner depth shadow
-    inset 0 0 80px rgba(0, 0, 0, 0.5),
-    inset 0 0 120px rgba(0, 0, 0, 0.3),
-    // Subtle cyan glow from monitors
-    inset 0 0 60px rgba(0, 212, 170, 0.03);
-
-  // Rack Frame Rails (Left & Right)
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border-radius: 6px;
-    pointer-events: none;
-    z-index: 1;
-    // Frame rails on sides
-    background:
-      // Left rail
-      linear-gradient(90deg,
-        rgba(35, 35, 40, 0.8) 0px,
-        rgba(45, 45, 50, 0.6) 4px,
-        rgba(25, 25, 30, 0.9) 8px,
-        transparent 12px
-      ),
-      // Right rail
-      linear-gradient(270deg,
-        rgba(35, 35, 40, 0.8) 0px,
-        rgba(45, 45, 50, 0.6) 4px,
-        rgba(25, 25, 30, 0.9) 8px,
-        transparent 12px
-      ),
-      // Top frame
-      linear-gradient(180deg,
-        rgba(40, 40, 45, 0.7) 0px,
-        rgba(30, 30, 35, 0.5) 3px,
-        rgba(20, 20, 25, 0.8) 6px,
-        transparent 10px
-      ),
-      // Bottom frame
-      linear-gradient(0deg,
-        rgba(25, 25, 30, 0.8) 0px,
-        rgba(35, 35, 40, 0.5) 3px,
-        rgba(20, 20, 25, 0.7) 6px,
-        transparent 10px
-      );
-    background-size:
-      12px 100%,
-      12px 100%,
-      100% 10px,
-      100% 10px;
-    background-position:
-      left top,
-      right top,
-      top left,
-      bottom left;
-    background-repeat:
-      no-repeat;
-    box-shadow:
-      // Inner frame depth
-      inset 6px 0 12px rgba(0, 0, 0, 0.3),
-      inset -6px 0 12px rgba(0, 0, 0, 0.3),
-      inset 0 6px 12px rgba(0, 0, 0, 0.25),
-      inset 0 -6px 12px rgba(0, 0, 0, 0.25);
-  }
-
-  // Top edge highlight (cabinet edge reflection)
-  &::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 15px;
-    right: 15px;
-    height: 1px;
-    background: linear-gradient(90deg,
-      transparent 0%,
-      rgba(80, 80, 85, 0.4) 15%,
-      rgba(100, 100, 105, 0.5) 50%,
-      rgba(80, 80, 85, 0.4) 85%,
-      transparent 100%);
-    z-index: 2;
-  }
+    // Outer cabinet frame
+    0 0 0 3px #2a2a2e,
+    0 0 0 6px #1e1e22,
+    0 0 0 8px #161618,
+    // 3D depth shadow
+    0 8px 32px rgba(0, 0, 0, 0.6),
+    0 16px 48px rgba(0, 0, 0, 0.4),
+    // Inner depth
+    inset 0 0 60px rgba(0, 0, 0, 0.5),
+    // Subtle cyan glow from monitors inside
+    inset 0 0 40px rgba(0, 212, 170, 0.02);
 }
 
-// Server Cards Grid - 4x2 layout with space for monitor stands
+// Rack Cabinet Top Panel (with ventilation grilles)
+.servers-section::before {
+  content: '';
+  position: absolute;
+  top: -20px;
+  left: 10px;
+  right: 10px;
+  height: 20px;
+  pointer-events: none;
+  z-index: 10;
+  // Top panel with ventilation holes
+  background:
+    // Ventilation grille pattern
+    repeating-linear-gradient(90deg,
+      transparent 0px,
+      transparent 4px,
+      rgba(15, 15, 18, 0.95) 4px,
+      rgba(15, 15, 18, 0.95) 6px
+    ),
+    // Top panel base
+    linear-gradient(180deg,
+      #2a2a2e 0%,
+      #222226 40%,
+      #1a1a1e 100%
+    );
+  border-radius: 6px 6px 0 0;
+  box-shadow:
+    // Top panel depth
+    0 -2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 2px 4px rgba(60, 60, 65, 0.15),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.3);
+  // Metal edge highlight
+  border-top: 1px solid rgba(70, 70, 75, 0.4);
+  border-left: 1px solid rgba(60, 60, 65, 0.3);
+  border-right: 1px solid rgba(60, 60, 65, 0.3);
+}
+
+// Rack Cabinet Bottom Panel (with feet/casters)
+.servers-section::after {
+  content: '';
+  position: absolute;
+  bottom: -24px;
+  left: 10px;
+  right: 10px;
+  height: 24px;
+  pointer-events: none;
+  z-index: 10;
+  // Bottom panel with caster/feet indicators
+  background:
+    // Caster wheel indicators
+    radial-gradient(ellipse 20px 8px at 60px 16px, #1a1a1e 0%, transparent 100%),
+    radial-gradient(ellipse 20px 8px at calc(100% - 60px) 16px, #1a1a1e 0%, transparent 100%),
+    // Ventilation grille
+    repeating-linear-gradient(90deg,
+      transparent 0px,
+      transparent 4px,
+      rgba(15, 15, 18, 0.95) 4px,
+      rgba(15, 15, 18, 0.95) 6px
+    ),
+    // Bottom panel base
+    linear-gradient(0deg,
+      #1a1a1e 0%,
+      #222226 60%,
+      #2a2a2e 100%
+    );
+  border-radius: 0 0 6px 6px;
+  box-shadow:
+    // Bottom panel depth
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    inset 0 -2px 4px rgba(60, 60, 65, 0.1),
+    inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(40, 40, 45, 0.5);
+  border-left: 1px solid rgba(50, 50, 55, 0.3);
+  border-right: 1px solid rgba(50, 50, 55, 0.3);
+}
+
+// Server Cards Grid - 4x2 layout inside rack cabinet
 .servers-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 28px 24px; // More vertical gap for stands
-  padding: 24px 28px 32px 28px; // Extra bottom padding for stands
+  gap: 28px 24px;
+  padding: 32px 48px 40px 48px; // Extra padding for rack rails
   height: 100%;
   align-content: center;
   position: relative;
   z-index: 5;
+
+  // Inner rack structure with U-rails
+  &::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 18px;
+    right: 18px;
+    bottom: 8px;
+    pointer-events: none;
+    z-index: 0;
+    border-radius: 4px;
+
+    // Left and Right vertical rack rails (U-slot pattern)
+    background:
+      // Left U-rail
+      linear-gradient(90deg,
+        #1e1e22 0px,
+        #2a2a2e 2px,
+        #323236 4px,
+        #2a2a2e 6px,
+        #222226 8px,
+        transparent 14px
+      ),
+      // Left rail mounting holes (repeating pattern)
+      repeating-linear-gradient(0deg,
+        transparent 0px,
+        transparent 20px,
+        rgba(10, 10, 12, 0.8) 20px,
+        rgba(10, 10, 12, 0.8) 24px,
+        transparent 24px,
+        transparent 44px
+      ),
+      // Right U-rail
+      linear-gradient(270deg,
+        #1e1e22 0px,
+        #2a2a2e 2px,
+        #323236 4px,
+        #2a2a2e 6px,
+        #222226 8px,
+        transparent 14px
+      ),
+      // Right rail mounting holes
+      repeating-linear-gradient(0deg,
+        transparent 0px,
+        transparent 20px,
+        rgba(10, 10, 12, 0.8) 20px,
+        rgba(10, 10, 12, 0.8) 24px,
+        transparent 24px,
+        transparent 44px
+      ),
+      // Horizontal rack unit dividers
+      repeating-linear-gradient(0deg,
+        transparent 0%,
+        transparent calc(50% - 2px),
+        rgba(30, 30, 35, 0.5) calc(50% - 2px),
+        rgba(35, 35, 40, 0.6) 50%,
+        rgba(30, 30, 35, 0.5) calc(50% + 2px),
+        transparent calc(50% + 2px),
+        transparent 100%
+      ),
+      // Inner cabinet depth gradient
+      linear-gradient(180deg,
+        rgba(0, 0, 0, 0.3) 0%,
+        rgba(0, 0, 0, 0.1) 20%,
+        transparent 50%,
+        rgba(0, 0, 0, 0.1) 80%,
+        rgba(0, 0, 0, 0.3) 100%
+      );
+    background-size:
+      14px 100%,
+      10px 44px,
+      14px 100%,
+      10px 44px,
+      100% 100%,
+      100% 100%;
+    background-position:
+      left top,
+      2px top,
+      right top,
+      calc(100% - 2px) top,
+      center center,
+      center center;
+    background-repeat:
+      no-repeat,
+      repeat-y,
+      no-repeat,
+      repeat-y,
+      no-repeat,
+      no-repeat;
+
+    // Inner shadow for depth
+    box-shadow:
+      inset 0 0 40px rgba(0, 0, 0, 0.4),
+      inset 0 0 80px rgba(0, 0, 0, 0.2);
+  }
+
+  // Subtle mesh/grille overlay for airflow visual
+  &::after {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 32px;
+    right: 32px;
+    bottom: 8px;
+    pointer-events: none;
+    z-index: 1;
+    // Hexagonal mesh pattern (ventilation)
+    background:
+      radial-gradient(circle at center, transparent 1px, rgba(0, 0, 0, 0.05) 1px, rgba(0, 0, 0, 0.05) 2px, transparent 2px);
+    background-size: 8px 8px;
+    opacity: 0.5;
+  }
+}
+
+// Cabinet Frame Decorations
+.cabinet-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+
+// Cabinet Top Bar with handles and label
+.cabinet-top {
+  position: absolute;
+  top: 8px;
+  left: 50px;
+  right: 50px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: linear-gradient(180deg,
+    rgba(45, 45, 50, 0.8) 0%,
+    rgba(35, 35, 40, 0.9) 50%,
+    rgba(25, 25, 30, 0.9) 100%
+  );
+  border-radius: 4px;
+  border: 1px solid rgba(60, 60, 65, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(80, 80, 85, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+// Door handles
+.handle-left, .handle-right {
+  width: 32px;
+  height: 8px;
+  background: linear-gradient(180deg,
+    #4a4a4e 0%,
+    #3a3a3e 40%,
+    #2a2a2e 100%
+  );
+  border-radius: 2px;
+  border: 1px solid rgba(70, 70, 75, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(90, 90, 95, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+// Cabinet label
+.cabinet-label {
+  font-family: $font-mono;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: rgba($cyber-cyan, 0.6);
+  text-shadow: 0 0 8px rgba($cyber-cyan, 0.3);
+}
+
+// Left Rail with LEDs
+.cabinet-rail-left {
+  position: absolute;
+  left: 16px;
+  top: 60px;
+  bottom: 60px;
+  width: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  background: linear-gradient(90deg,
+    rgba(35, 35, 40, 0.6) 0%,
+    rgba(28, 28, 32, 0.8) 50%,
+    rgba(35, 35, 40, 0.6) 100%
+  );
+  border-radius: 3px;
+  border: 1px solid rgba(50, 50, 55, 0.4);
+}
+
+// Status LEDs
+.rail-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1a1a1e;
+  border: 1px solid rgba(40, 40, 45, 0.6);
+  transition: all 0.3s ease;
+
+  &.active {
+    background: $cyber-cyan;
+    box-shadow: 0 0 8px $cyber-cyan, 0 0 12px rgba($cyber-cyan, 0.5);
+    animation: led-pulse 2s ease-in-out infinite;
+  }
+
+  &.warning.active {
+    background: $cyber-yellow;
+    box-shadow: 0 0 8px $cyber-yellow, 0 0 12px rgba($cyber-yellow, 0.5);
+    animation: led-blink 0.5s ease-in-out infinite;
+  }
+
+  &.error.active {
+    background: $cyber-red;
+    box-shadow: 0 0 8px $cyber-red, 0 0 12px rgba($cyber-red, 0.5);
+    animation: led-blink 0.3s ease-in-out infinite;
+  }
+}
+
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes led-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+// Rail screws
+.rail-screw {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg,
+    #4a4a4e 0%,
+    #3a3a3e 30%,
+    #2a2a2e 70%,
+    #3a3a3e 100%
+  );
+  border: 1px solid rgba(60, 60, 65, 0.4);
+  margin-top: auto;
+
+  &:last-child {
+    margin-top: 8px;
+    margin-bottom: 0;
+  }
+
+  // Screw slot
+  &::after {
+    content: '';
+    display: block;
+    width: 5px;
+    height: 1px;
+    background: rgba(20, 20, 25, 0.8);
+    margin: 3px auto 0;
+  }
+}
+
+// Right Rail with ventilation
+.cabinet-rail-right {
+  position: absolute;
+  right: 16px;
+  top: 60px;
+  bottom: 60px;
+  width: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  background: linear-gradient(270deg,
+    rgba(35, 35, 40, 0.6) 0%,
+    rgba(28, 28, 32, 0.8) 50%,
+    rgba(35, 35, 40, 0.6) 100%
+  );
+  border-radius: 3px;
+  border: 1px solid rgba(50, 50, 55, 0.4);
+}
+
+// Ventilation slots
+.vent-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+
+  span {
+    width: 10px;
+    height: 3px;
+    background: rgba(10, 10, 12, 0.8);
+    border-radius: 1px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
 }
 
 // Right: Guardian Section (30%)
@@ -860,18 +1162,29 @@ $cyber-red: #ff3333;
 @media (max-width: 1600px) {
   .servers-grid {
     gap: 24px 20px;
-    padding: 20px 24px 28px 24px;
+    padding: 40px 44px 48px 44px;
   }
 
   .system-title {
     font-size: 18px;
     letter-spacing: 3px;
   }
+
+  .cabinet-top {
+    left: 40px;
+    right: 40px;
+  }
+
+  .cabinet-rail-left,
+  .cabinet-rail-right {
+    top: 50px;
+    bottom: 50px;
+  }
 }
 
 @media (max-width: 1400px) {
   .servers-grid {
-    padding: 18px 20px 26px 20px;
+    padding: 38px 40px 46px 40px;
     gap: 22px 18px;
   }
 
@@ -891,6 +1204,27 @@ $cyber-red: #ff3333;
       font-size: 14px;
     }
   }
+
+  .cabinet-top {
+    left: 36px;
+    right: 36px;
+    height: 24px;
+  }
+
+  .cabinet-label {
+    font-size: 8px;
+  }
+
+  .cabinet-rail-left,
+  .cabinet-rail-right {
+    width: 16px;
+    left: 12px;
+  }
+
+  .cabinet-rail-right {
+    left: auto;
+    right: 12px;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -900,7 +1234,7 @@ $cyber-red: #ff3333;
   }
 
   .servers-grid {
-    padding: 16px 18px 24px 18px;
+    padding: 36px 36px 44px 36px;
     gap: 20px 16px;
   }
 
@@ -917,6 +1251,16 @@ $cyber-red: #ff3333;
   .system-title {
     font-size: 16px;
   }
+
+  // Hide cabinet decorations on smaller screens
+  .cabinet-frame {
+    display: none;
+  }
+
+  .servers-section::before,
+  .servers-section::after {
+    display: none;
+  }
 }
 
 @media (max-width: 1000px) {
@@ -929,6 +1273,7 @@ $cyber-red: #ff3333;
   .servers-section {
     flex: none;
     min-height: 500px;
+    margin: 0;
   }
 
   .servers-grid {
