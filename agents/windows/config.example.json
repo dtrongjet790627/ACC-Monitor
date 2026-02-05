@@ -1,0 +1,22 @@
+{
+  "server_url": "http://172.17.10.xxx:5000",
+  "server_id": "164",
+  "report_interval": 10,
+  "processes": [
+    "Pack.Server",
+    "ACC.Server",
+    "ACC.MQ",
+    "ACC.LogReader",
+    "ACC.Packing"
+  ],
+  "oracle_service": "OracleServiceXE",
+  "log_path": "E:\\ACC\\ACC\\Log",
+  "log_level": "INFO",
+  "auto_restart": false,
+  "restart_cooldown": 300,
+  "restart_commands": {
+    "Pack.Server": "net start \"Pack Server\"",
+    "ACC.Server": "net start \"ACC Server\"",
+    "ACC.MQ": "net start \"ACC MQ\""
+  }
+}

@@ -1,0 +1,666 @@
+// ===== ACC Monitor - Cyberpunk UI Components =====
+@import './variables.scss';
+
+// ===== 按钮 Button - V4 更炫 =====
+.cyber-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 28px;
+  background: transparent;
+  border: 2px solid $neon-cyan;
+  color: $neon-cyan;
+  font-family: $font-mono;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all $transition-normal cubic-bezier(0.4, 0, 0.2, 1);
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba($neon-cyan, 0.3), rgba($neon-purple, 0.2), transparent);
+    transition: left $transition-slow ease;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, $neon-cyan, $neon-purple);
+    transform: scaleX(0);
+    transition: transform 0.3s ease;
+  }
+
+  &:hover {
+    background: rgba($neon-cyan, 0.15);
+    box-shadow: $glow-cyan, inset 0 0 30px rgba($neon-cyan, 0.1);
+    text-shadow: 0 0 15px $neon-cyan;
+    transform: translateY(-3px);
+
+    &::before {
+      left: 100%;
+    }
+
+    &::after {
+      transform: scaleX(1);
+    }
+  }
+
+  &:active {
+    transform: translateY(-1px) scale(0.98);
+  }
+
+  // 变体
+  &--primary {
+    background: linear-gradient(135deg, rgba($neon-cyan, 0.2), rgba($neon-purple, 0.2));
+    border-image: linear-gradient(90deg, $neon-cyan, $neon-purple) 1;
+  }
+
+  &--success {
+    border-color: $neon-green;
+    color: $neon-green;
+
+    &:hover {
+      background: rgba($neon-green, 0.1);
+      box-shadow: $glow-green;
+    }
+  }
+
+  &--warning {
+    border-color: $neon-orange;
+    color: $neon-orange;
+
+    &:hover {
+      background: rgba($neon-orange, 0.1);
+      box-shadow: $glow-orange;
+    }
+  }
+
+  &--danger {
+    border-color: $neon-red;
+    color: $neon-red;
+
+    &:hover {
+      background: rgba($neon-red, 0.1);
+      box-shadow: $glow-red;
+    }
+  }
+
+  &--ghost {
+    border-color: rgba($neon-cyan, 0.3);
+    color: $text-secondary;
+
+    &:hover {
+      border-color: $neon-cyan;
+      color: $neon-cyan;
+    }
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
+// ===== 输入框 Input =====
+.cyber-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba($neon-cyan, 0.3);
+  color: $text-primary;
+  font-family: $font-mono;
+  font-size: 14px;
+  outline: none;
+  transition: all $transition-normal ease;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+
+  &::placeholder {
+    color: rgba($text-secondary, 0.6);
+  }
+
+  &:focus {
+    border-color: $neon-cyan;
+    box-shadow: 0 0 20px rgba($neon-cyan, 0.3), inset 0 0 10px rgba($neon-cyan, 0.1);
+  }
+
+  &:hover:not(:focus) {
+    border-color: rgba($neon-cyan, 0.5);
+  }
+
+  &--error {
+    border-color: $neon-red;
+
+    &:focus {
+      box-shadow: 0 0 20px rgba($neon-red, 0.3);
+    }
+  }
+}
+
+// ===== 弹窗 Modal =====
+.cyber-modal {
+  &-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(4px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+  }
+
+  &-content {
+    position: relative;
+    background: linear-gradient(135deg, rgba(5, 5, 20, 0.98) 0%, rgba(10, 10, 30, 0.98) 100%);
+    border: 2px solid transparent;
+    border-image: linear-gradient(135deg, $neon-cyan, $neon-purple) 1;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: hidden;
+    animation: slideIn 0.3s ease;
+    box-shadow:
+      0 0 50px rgba($neon-cyan, 0.3),
+      0 0 100px rgba($neon-purple, 0.2),
+      0 20px 60px rgba(0, 0, 0, 0.8);
+
+    // 科技风边角
+    &::before, &::after {
+      content: '';
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border: 2px solid $neon-cyan;
+    }
+
+    &::before {
+      top: -1px;
+      left: -1px;
+      border-right: none;
+      border-bottom: none;
+    }
+
+    &::after {
+      bottom: -1px;
+      right: -1px;
+      border-left: none;
+      border-top: none;
+    }
+
+    // 扫描线效果
+    .scan-line {
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, $neon-cyan, $neon-purple, transparent);
+      animation: modalScan 3s linear infinite;
+    }
+  }
+
+  &-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 25px;
+    background: linear-gradient(90deg, rgba($neon-cyan, 0.1), rgba($neon-purple, 0.1));
+    border-bottom: 1px solid rgba($neon-cyan, 0.3);
+  }
+
+  &-title {
+    font-size: 16px;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: $neon-cyan;
+    text-shadow: 0 0 10px rgba($neon-cyan, 0.5);
+  }
+
+  &-close {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid rgba($neon-red, 0.5);
+    color: $neon-red;
+    cursor: pointer;
+    transition: all $transition-normal ease;
+
+    &:hover {
+      background: rgba($neon-red, 0.2);
+      box-shadow: 0 0 20px rgba($neon-red, 0.5);
+    }
+  }
+
+  &-body {
+    padding: 25px;
+    color: $text-secondary;
+    line-height: 1.8;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  &-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 20px 25px;
+    background: rgba(0, 0, 0, 0.3);
+    border-top: 1px solid rgba($neon-cyan, 0.2);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modalScan {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+// ===== Toast 提示 =====
+.cyber-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  &-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: $bg-card;
+    border: 1px solid rgba($neon-cyan, 0.3);
+    min-width: 280px;
+    animation: toastSlideIn 0.3s ease;
+    position: relative;
+    overflow: hidden;
+
+    // 左侧指示条
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+    }
+
+    // 进度条
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 2px;
+      animation: toastProgress 3s linear forwards;
+    }
+
+    &--success {
+      border-color: rgba($neon-green, 0.5);
+      box-shadow: 0 0 20px rgba($neon-green, 0.2);
+
+      &::before { background: $neon-green; box-shadow: 0 0 15px $neon-green; }
+      &::after { background: $neon-green; }
+
+      .cyber-toast-icon { color: $neon-green; text-shadow: 0 0 10px $neon-green; }
+    }
+
+    &--warning {
+      border-color: rgba($neon-orange, 0.5);
+      box-shadow: 0 0 20px rgba($neon-orange, 0.2);
+
+      &::before { background: $neon-orange; box-shadow: 0 0 15px $neon-orange; }
+      &::after { background: $neon-orange; }
+
+      .cyber-toast-icon { color: $neon-orange; text-shadow: 0 0 10px $neon-orange; }
+    }
+
+    &--error {
+      border-color: rgba($neon-red, 0.5);
+      box-shadow: 0 0 20px rgba($neon-red, 0.2);
+
+      &::before { background: $neon-red; box-shadow: 0 0 15px $neon-red; animation: blink 0.5s ease-in-out infinite; }
+      &::after { background: $neon-red; }
+
+      .cyber-toast-icon { color: $neon-red; text-shadow: 0 0 10px $neon-red; animation: blink 0.5s ease-in-out infinite; }
+    }
+
+    &--info {
+      border-color: rgba($neon-blue, 0.5);
+      box-shadow: 0 0 20px rgba($neon-blue, 0.2);
+
+      &::before { background: $neon-blue; box-shadow: 0 0 15px $neon-blue; }
+      &::after { background: $neon-blue; }
+
+      .cyber-toast-icon { color: $neon-blue; text-shadow: 0 0 10px $neon-blue; }
+    }
+  }
+
+  &-icon {
+    font-size: 18px;
+  }
+
+  &-message {
+    flex: 1;
+    font-size: 13px;
+    color: $text-primary;
+  }
+
+  &-close {
+    background: transparent;
+    border: none;
+    color: $text-secondary;
+    cursor: pointer;
+    padding: 4px;
+    transition: color $transition-fast ease;
+
+    &:hover {
+      color: $text-primary;
+    }
+  }
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toastProgress {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+// ===== 表格 Table =====
+.cyber-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: $bg-card;
+  border: 1px solid rgba($neon-cyan, 0.2);
+
+  th, td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid rgba($neon-cyan, 0.1);
+  }
+
+  th {
+    background: linear-gradient(90deg, rgba($neon-cyan, 0.1), rgba($neon-purple, 0.1));
+    color: $neon-cyan;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-size: 12px;
+    text-shadow: 0 0 10px rgba($neon-cyan, 0.5);
+  }
+
+  td {
+    color: $text-secondary;
+    font-size: 13px;
+  }
+
+  tbody tr {
+    transition: all $transition-normal ease;
+
+    &:hover {
+      background: rgba($neon-cyan, 0.05);
+
+      td {
+        color: $text-primary;
+      }
+    }
+  }
+
+  // 状态高亮
+  .status-normal { color: $neon-green; text-shadow: 0 0 10px rgba($neon-green, 0.5); }
+  .status-warning { color: $neon-orange; text-shadow: 0 0 10px rgba($neon-orange, 0.5); }
+  .status-error { color: $neon-red; text-shadow: 0 0 10px rgba($neon-red, 0.5); animation: blink 1s ease-in-out infinite; }
+  .status-info { color: $neon-blue; text-shadow: 0 0 10px rgba($neon-blue, 0.5); }
+}
+
+// ===== 卡片 Card =====
+.cyber-card {
+  background: $bg-card;
+  border: 1px solid rgba($neon-cyan, 0.2);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: all $transition-normal ease;
+  box-shadow: $shadow-card;
+
+  // 科技风边角
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 40px;
+    height: 40px;
+    border-top: 2px solid rgba($neon-cyan, 0.3);
+    border-right: 2px solid rgba($neon-cyan, 0.3);
+    pointer-events: none;
+  }
+
+  &:hover {
+    border-color: $neon-cyan;
+    box-shadow: $shadow-card-hover, $glow-cyan, inset 0 0 40px rgba($neon-cyan, 0.05);
+    transform: translateY(-5px);
+
+    &::before {
+      border-color: $neon-cyan;
+      box-shadow: 0 0 20px rgba($neon-cyan, 0.5);
+    }
+  }
+
+  &-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba($neon-cyan, 0.15);
+    position: relative;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      width: 60px;
+      height: 1px;
+      background: $neon-cyan;
+      box-shadow: 0 0 10px $neon-cyan;
+    }
+  }
+
+  &-title {
+    font-size: 14px;
+    color: $neon-cyan;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px rgba($neon-cyan, 0.5);
+  }
+}
+
+// ===== 进度条 Progress Bar =====
+.cyber-progress {
+  position: relative;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: $border-radius-sm;
+  overflow: hidden;
+  border: 1px solid rgba($neon-cyan, 0.15);
+
+  &-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.8s ease;
+    position: relative;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 50%;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent);
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
+      animation: shimmer 2s infinite;
+    }
+
+    &--low {
+      background: linear-gradient(90deg, $neon-green, darken($neon-green, 10%));
+      box-shadow: 0 0 20px rgba($neon-green, 0.4);
+    }
+
+    &--medium {
+      background: linear-gradient(90deg, $neon-cyan, $neon-blue);
+      box-shadow: 0 0 20px rgba($neon-cyan, 0.4);
+    }
+
+    &--high {
+      background: linear-gradient(90deg, $neon-orange, darken($neon-orange, 10%));
+      box-shadow: 0 0 20px rgba($neon-orange, 0.5);
+    }
+
+    &--critical {
+      background: linear-gradient(90deg, $neon-red, lighten($neon-red, 10%));
+      box-shadow: 0 0 30px rgba($neon-red, 0.6);
+      animation: criticalBar 1s ease-in-out infinite;
+    }
+  }
+
+  &-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 13px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(0, 0, 0, 1), 0 0 20px rgba(0, 0, 0, 0.8);
+    z-index: 10;
+    letter-spacing: 1px;
+  }
+}
+
+@keyframes criticalBar {
+  0%, 100% { box-shadow: 0 0 30px rgba($neon-red, 0.6); }
+  50% { box-shadow: 0 0 50px rgba($neon-red, 0.9); }
+}
+
+// ===== 状态徽章 Badge =====
+.cyber-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: $border-radius-sm;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: bold;
+
+  &-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 15px currentColor;
+  }
+
+  &--normal {
+    background: rgba($neon-green, 0.15);
+    border: 1px solid rgba($neon-green, 0.5);
+    color: $neon-green;
+    box-shadow: 0 0 20px rgba($neon-green, 0.3);
+  }
+
+  &--warning {
+    background: rgba($neon-orange, 0.15);
+    border: 1px solid rgba($neon-orange, 0.5);
+    color: $neon-orange;
+    box-shadow: 0 0 20px rgba($neon-orange, 0.3);
+    animation: warningPulse 2s ease-in-out infinite;
+  }
+
+  &--error {
+    background: rgba($neon-red, 0.2);
+    border: 1px solid rgba($neon-red, 0.6);
+    color: $neon-red;
+    box-shadow: 0 0 30px rgba($neon-red, 0.5);
+    animation: errorPulse 0.8s ease-in-out infinite;
+  }
+
+  &--info {
+    background: rgba($neon-blue, 0.15);
+    border: 1px solid rgba($neon-blue, 0.5);
+    color: $neon-blue;
+    box-shadow: 0 0 20px rgba($neon-blue, 0.3);
+  }
+}
+
+@keyframes warningPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes errorPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 30px rgba($neon-red, 0.5); }
+  50% { opacity: 0.8; box-shadow: 0 0 50px rgba($neon-red, 0.8); }
+}

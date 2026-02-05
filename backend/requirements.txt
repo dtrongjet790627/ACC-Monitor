@@ -1,0 +1,27 @@
+# ACC Monitor Backend Dependencies
+# Flask Core
+Flask==3.0.0
+Flask-SocketIO==5.3.6
+Flask-SQLAlchemy==3.1.1
+Flask-Migrate==4.0.5
+Flask-CORS==4.0.0
+
+# WebSocket
+python-socketio==5.10.0
+eventlet==0.33.3
+
+# Database
+SQLAlchemy==2.0.23
+cx_Oracle==8.3.0
+
+# SSH Connection
+paramiko==3.4.0
+
+# Utilities
+python-dotenv==1.0.0
+apscheduler==3.10.4
+requests==2.31.0
+
+# Data Processing (optional - for data export features)
+# pandas>=2.0.0
+# openpyxl>=3.1.0

@@ -1,0 +1,650 @@
+// ===== ACC Monitor - HACKER TERMINAL Global Styles =====
+// 严格按照设计文档：深黑背景 + 荧光绿主色 + 终端风格
+@import './variables.scss';
+
+// ============================================
+// Google Fonts - Orbitron 终端字体
+// ============================================
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Fira+Code:wght@400;500;700&display=swap');
+
+// ============================================
+// CSS Variables for runtime usage
+// ============================================
+:root {
+  --bg-abyss: #{$bg-abyss};
+  --bg-deep: #{$bg-deep};
+  --bg-card: #{$bg-card};
+  --bg-card-hover: #{$bg-card-hover};
+
+  --neon-green: #{$neon-green};
+  --neon-cyan: #{$neon-cyan};
+  --neon-purple: #{$neon-purple};
+  --neon-orange: #{$neon-orange};
+  --neon-red: #{$neon-red};
+  --neon-blue: #{$neon-blue};
+  --neon-pink: #{$neon-pink};
+
+  --glow-green: #{$glow-green};
+  --glow-cyan: #{$glow-cyan};
+  --glow-purple: #{$glow-purple};
+  --glow-red: #{$glow-red};
+
+  --text-primary: #{$text-primary};
+  --text-secondary: #{$text-secondary};
+  --border-glow: #{$border-glow};
+}
+
+// ============================================
+// Reset
+// ============================================
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+}
+
+// ============================================
+// Body - 深黑背景 + 网格线
+// ============================================
+body {
+  // 终端等宽字体
+  font-family: $font-terminal;
+  // 深黑背景 #0a0a0a
+  background-color: $bg-abyss;
+  // 主文字色 - 荧光绿
+  color: $text-primary;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+
+  // 深绿色网格线背景（设计文档要求）
+  background-image:
+    linear-gradient(rgba(0, 25, 0, 0.8) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 25, 0, 0.8) 1px, transparent 1px);
+  background-size: 20px 20px;
+
+  // 渐变遮罩增加深度
+  &::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background:
+      radial-gradient(ellipse at 20% 20%, rgba(0, 255, 65, 0.03) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(0, 255, 65, 0.02) 0%, transparent 50%),
+      radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.3) 100%);
+    z-index: -1;
+    pointer-events: none;
+  }
+}
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+}
+
+// ============================================
+// 扫描线效果（设计文档要求）- 增强版
+// ============================================
+.scanlines {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 65, 0.02) 2px,
+    rgba(0, 255, 65, 0.02) 4px
+  );
+  pointer-events: none;
+  z-index: 1000;
+  animation: scanlineShift 0.1s steps(3) infinite;
+}
+
+@keyframes scanlineShift {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.7; }
+}
+
+// ============================================
+// 全局CRT效果层
+// ============================================
+.global-crt-effect {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+
+  // CRT扫描线
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.12) 0px,
+      rgba(0, 0, 0, 0.12) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+  }
+
+  // 屏幕边缘暗角
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(
+      ellipse at center,
+      transparent 0%,
+      transparent 50%,
+      rgba(0, 0, 0, 0.3) 100%
+    );
+  }
+}
+
+// ============================================
+// 电路板纹理层
+// ============================================
+.circuit-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image:
+    linear-gradient(90deg, transparent 48%, rgba(0, 255, 65, 0.3) 48%, rgba(0, 255, 65, 0.3) 52%, transparent 52%),
+    linear-gradient(0deg, transparent 48%, rgba(0, 255, 65, 0.2) 48%, rgba(0, 255, 65, 0.2) 52%, transparent 52%),
+    linear-gradient(45deg, transparent 47%, rgba(0, 255, 65, 0.15) 47%, rgba(0, 255, 65, 0.15) 53%, transparent 53%);
+  background-size: 80px 80px, 80px 80px, 120px 120px;
+}
+
+// ============================================
+// 版本标识 - 终端风格
+// ============================================
+.version-tag {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  font-size: 11px;
+  color: $neon-green;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  z-index: 100;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid rgba($neon-green, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: $font-mono;
+
+  // 霓虹发光
+  box-shadow: 0 0 15px rgba($neon-green, 0.2);
+
+  &::before {
+    content: '>_';
+    color: $neon-green;
+    font-weight: bold;
+  }
+
+  span {
+    color: $neon-green;
+  }
+}
+
+// ============================================
+// 滚动条样式 - 荧光绿
+// ============================================
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba($neon-green, 0.15);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, $neon-green, darken($neon-green, 20%));
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+
+  &:hover {
+    background: linear-gradient(180deg, lighten($neon-green, 10%), $neon-green);
+    box-shadow: 0 0 10px rgba($neon-green, 0.5);
+  }
+}
+
+// ============================================
+// 文字选择效果
+// ============================================
+::selection {
+  background: rgba($neon-green, 0.3);
+  color: #ffffff;
+}
+
+// ============================================
+// 全局链接样式 - 荧光绿
+// ============================================
+a {
+  color: $neon-green;
+  text-decoration: none;
+  transition: all 0.3s ease;
+
+  &:hover {
+    color: lighten($neon-green, 15%);
+    text-shadow: 0 0 10px rgba($neon-green, 0.6);
+  }
+}
+
+// ============================================
+// 全局按钮重置
+// ============================================
+button {
+  font-family: $font-terminal;
+  cursor: pointer;
+  border: none;
+  background: none;
+  outline: none;
+}
+
+// ============================================
+// 全局输入框样式 - 终端风格
+// ============================================
+input, textarea, select {
+  font-family: $font-mono;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba($neon-green, 0.4);
+  color: $neon-green;
+  padding: 10px 14px;
+  outline: none;
+  transition: all 0.3s ease;
+
+  &:focus {
+    border-color: $neon-green;
+    box-shadow: 0 0 15px rgba($neon-green, 0.3);
+  }
+
+  &::placeholder {
+    color: $text-secondary;
+    opacity: 0.6;
+  }
+}
+
+// ============================================
+// 全局工具类 - 霓虹发光
+// ============================================
+.neon-glow-green {
+  text-shadow: 0 0 8px $neon-green, 0 0 15px rgba($neon-green, 0.6);
+}
+
+.neon-glow-cyan {
+  text-shadow: 0 0 8px $neon-cyan, 0 0 15px rgba($neon-cyan, 0.6);
+}
+
+.neon-glow-red {
+  text-shadow: 0 0 8px $neon-red, 0 0 15px rgba($neon-red, 0.6);
+}
+
+.neon-glow-orange {
+  text-shadow: 0 0 8px $neon-orange, 0 0 15px rgba($neon-orange, 0.6);
+}
+
+// ============================================
+// 终端装饰符号样式
+// ============================================
+.terminal-prefix {
+  color: $neon-green;
+  font-weight: bold;
+  margin-right: 8px;
+  opacity: 0.8;
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background: $neon-green;
+  animation: cursorBlink 1s step-end infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+// ============================================
+// 全局动画类
+// ============================================
+.animate-pulse {
+  animation: globalPulse 2s ease-in-out infinite;
+}
+
+@keyframes globalPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.animate-glow {
+  animation: globalGlow 2s ease-in-out infinite;
+}
+
+@keyframes globalGlow {
+  0%, 100% { filter: drop-shadow(0 0 5px currentColor); }
+  50% { filter: drop-shadow(0 0 15px currentColor); }
+}
+
+// ============================================
+// Glitch 故障效果
+// ============================================
+@keyframes glitch {
+  0%, 100% {
+    transform: translate(0);
+  }
+  20% {
+    transform: translate(-2px, 1px);
+    filter: hue-rotate(90deg);
+  }
+  40% {
+    transform: translate(2px, -1px);
+    filter: hue-rotate(180deg);
+  }
+  60% {
+    transform: translate(-1px, 2px);
+    filter: hue-rotate(270deg);
+  }
+  80% {
+    transform: translate(1px, -2px);
+    filter: hue-rotate(360deg);
+  }
+}
+
+.glitch-effect {
+  animation: glitch 0.3s ease-in-out;
+}
+
+// ============================================
+// 全局过渡
+// ============================================
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+// ============================================
+// GPU加速提示
+// ============================================
+.gpu-accelerated {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+// ============================================
+// 二进制装饰流
+// ============================================
+.binary-decoration {
+  position: fixed;
+  font-family: $font-mono;
+  font-size: 10px;
+  color: rgba($neon-green, 0.15);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 0;
+  letter-spacing: 2px;
+}
+
+// ============================================
+// 碎片头像通用样式
+// ============================================
+.cyber-avatar-common {
+  position: relative;
+  border-radius: 50%;
+  border: 2px solid $neon-green;
+  box-shadow:
+    0 0 20px $neon-green,
+    0 0 40px rgba($neon-green, 0.4),
+    0 0 60px rgba($neon-green, 0.2);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.9);
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      135deg,
+      rgba($neon-green, 0.1) 0%,
+      transparent 50%,
+      rgba($neon-green, 0.05) 100%
+    );
+    z-index: 1;
+    pointer-events: none;
+  }
+}
+
+// ============================================
+// 代码碎片动画
+// ============================================
+@keyframes codeFragmentDrift {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0.4;
+  }
+  25% {
+    transform: translateY(-3px) rotate(5deg);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(-1px) rotate(-3deg);
+    opacity: 0.5;
+  }
+  75% {
+    transform: translateY(-4px) rotate(2deg);
+    opacity: 0.8;
+  }
+}
+
+// ============================================
+// 增强的霓虹发光动画
+// ============================================
+@keyframes neonPulseEnhanced {
+  0%, 100% {
+    box-shadow:
+      0 0 10px currentColor,
+      0 0 20px currentColor,
+      0 0 30px currentColor;
+  }
+  50% {
+    box-shadow:
+      0 0 20px currentColor,
+      0 0 40px currentColor,
+      0 0 60px currentColor;
+  }
+}
+
+.neon-pulse-enhanced {
+  animation: neonPulseEnhanced 2s ease-in-out infinite;
+}
+
+// ============================================
+// 故障抖动效果
+// ============================================
+@keyframes glitchShake {
+  0%, 100% { transform: translate(0); }
+  10% { transform: translate(-2px, 1px); }
+  20% { transform: translate(2px, -1px); }
+  30% { transform: translate(-1px, -2px); }
+  40% { transform: translate(1px, 2px); }
+  50% { transform: translate(-2px, -1px); }
+  60% { transform: translate(2px, 1px); }
+  70% { transform: translate(-1px, 2px); }
+  80% { transform: translate(1px, -2px); }
+  90% { transform: translate(-2px, 2px); }
+}
+
+.glitch-shake {
+  animation: glitchShake 0.3s ease-in-out;
+}
+
+// ============================================
+// RGB分离效果
+// ============================================
+@keyframes rgbSplit {
+  0%, 100% {
+    text-shadow:
+      0 0 10px currentColor;
+  }
+  25% {
+    text-shadow:
+      -2px 0 0 rgba(255, 0, 0, 0.5),
+      2px 0 0 rgba(0, 255, 255, 0.5),
+      0 0 10px currentColor;
+  }
+  50% {
+    text-shadow:
+      2px 0 0 rgba(255, 0, 0, 0.5),
+      -2px 0 0 rgba(0, 255, 255, 0.5),
+      0 0 10px currentColor;
+  }
+  75% {
+    text-shadow:
+      -1px 1px 0 rgba(255, 0, 0, 0.5),
+      1px -1px 0 rgba(0, 255, 255, 0.5),
+      0 0 10px currentColor;
+  }
+}
+
+.rgb-split-text {
+  animation: rgbSplit 4s ease-in-out infinite;
+}
+
+// ============================================
+// 数值跳动动画（豆包反馈增强）
+// ============================================
+@keyframes valuePulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.15);
+    text-shadow: 0 0 15px $neon-green;
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  75% {
+    transform: scale(1.08);
+  }
+}
+
+.value-pulse {
+  animation: valuePulse 0.4s ease-out;
+}
+
+// ============================================
+// 状态灯呼吸效果
+// ============================================
+@keyframes statusBreathe {
+  0%, 100% {
+    box-shadow: 0 0 5px currentColor;
+    opacity: 0.8;
+  }
+  50% {
+    box-shadow: 0 0 15px currentColor, 0 0 25px currentColor;
+    opacity: 1;
+  }
+}
+
+.status-breathe {
+  animation: statusBreathe 2s ease-in-out infinite;
+}
+
+// ============================================
+// 进度条流动效果
+// ============================================
+@keyframes barFlow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
+}
+
+.bar-flowing {
+  background: linear-gradient(
+    90deg,
+    currentColor 0%,
+    lighten($neon-green, 20%) 50%,
+    currentColor 100%
+  );
+  background-size: 200% 100%;
+  animation: barFlow 1.5s linear infinite;
+}
+
+// ============================================
+// 统一边框样式 - 荧光绿主题
+// ============================================
+.cyber-border {
+  border: 2px solid rgba($neon-green, 0.4);
+  box-shadow: 0 0 15px rgba($neon-green, 0.2), inset 0 0 30px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    border-color: rgba($neon-green, 0.7);
+    box-shadow: 0 0 25px rgba($neon-green, 0.3), inset 0 0 30px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.cyber-border-warning {
+  border: 2px solid rgba($neon-orange, 0.4);
+  box-shadow: 0 0 15px rgba($neon-orange, 0.2);
+}
+
+.cyber-border-error {
+  border: 2px solid rgba($neon-red, 0.4);
+  box-shadow: 0 0 15px rgba($neon-red, 0.2);
+}
+
+// ============================================
+// 屏幕闪烁效果
+// ============================================
+@keyframes screenFlicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.85; }
+  94% { opacity: 1; }
+  97% { opacity: 0.9; }
+}
+
+.screen-flicker {
+  animation: screenFlicker 4s ease-in-out infinite;
+}

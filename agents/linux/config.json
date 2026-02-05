@@ -1,0 +1,13 @@
+{
+    "server_url": "http://172.17.10.xxx:5000",
+    "server_id": "163",
+    "report_interval": 30,
+    "containers": [
+        "hulu-eai",
+        "redis",
+        "portainer",
+        "frpc"
+    ],
+    "log_path": "/var/eai/logs",
+    "log_level": "INFO"
+}

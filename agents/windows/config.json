@@ -1,0 +1,14 @@
+{
+    "server_url": "http://172.17.10.xxx:5000",
+    "server_id": "164",
+    "report_interval": 30,
+    "processes": [
+        "ACC.Server",
+        "ACC.MQ",
+        "Pack.Server",
+        "ACC.Packing",
+        "Oracle"
+    ],
+    "log_path": "E:\\ACC\\ACC\\Log",
+    "log_level": "INFO"
+}

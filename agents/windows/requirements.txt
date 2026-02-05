@@ -1,0 +1,5 @@
+# ACC Monitor Windows Agent Dependencies
+psutil==5.9.7
+wmi==1.5.1
+requests==2.31.0
+pywin32==306

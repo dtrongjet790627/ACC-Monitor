@@ -1,0 +1,105 @@
+// ===== ACC Monitor - Cyberpunk HACKER TERMINAL Theme Variables =====
+// 严格按照设计文档实现：黑客/赛博风格
+
+// ============================================
+// 1. 背景色系 - 深黑背景 #0a0a0a
+// ============================================
+$bg-abyss: #0a0a0a;          // 主背景 - 深黑
+$bg-deep: #080808;           // 更深层
+$bg-darker: #050505;         // 最深层
+$bg-card: rgba(10, 10, 10, 0.95);
+$bg-card-hover: rgba(15, 20, 15, 0.98);
+$bg-card-inner: rgba(5, 5, 5, 0.8);
+
+// ============================================
+// 2. 霓虹色系 - 以青绿色 #00d4aa 为主色
+// ============================================
+// 主色 - 青绿色（与Guardian图片色调一致）
+$neon-green: #00d4aa;        // 主色 - 青绿色
+$neon-matrix: #00ffcc;       // 矩阵雨色（青色）
+$neon-guardian: #00d4aa;     // Guardian主题色
+
+// 辅助色 - 少量点缀
+$neon-cyan: #0099ff;         // 蓝色辅助
+$neon-purple: #9d4edd;       // 紫色（减少使用）
+$neon-pink: #ff0080;         // 粉色（极少量点缀）
+$neon-orange: #ff6b35;       // 警告色
+$neon-red: #ff0055;          // 错误色/危险色
+$neon-blue: #0099ff;         // 信息色
+$neon-yellow: #ffd700;       // 黄色
+$neon-electric: #00ff41;     // 电光绿（同主色）
+
+// ============================================
+// 3. 发光效果 - 青绿色霓虹发光
+// ============================================
+$glow-green: 0 0 20px #00d4aa, 0 0 40px rgba(0, 212, 170, 0.5), 0 0 60px rgba(0, 212, 170, 0.3);
+$glow-cyan: 0 0 20px #0099ff, 0 0 40px rgba(0, 153, 255, 0.4);
+$glow-purple: 0 0 20px #9d4edd, 0 0 40px rgba(157, 78, 221, 0.4);
+$glow-red: 0 0 20px #ff0055, 0 0 40px rgba(255, 0, 85, 0.5);
+$glow-orange: 0 0 20px #ff6b35, 0 0 40px rgba(255, 107, 53, 0.4);
+
+// ============================================
+// 4. 文字颜色
+// ============================================
+$text-primary: #00d4aa;      // 主文字色 - 青绿色
+$text-secondary: #6c757d;    // 次要文字 - 灰色
+$text-white: #ffffff;        // 纯白（数值等）
+$border-glow: rgba(0, 212, 170, 0.4);
+
+// ============================================
+// 5. 字体 - 终端等宽字体
+// ============================================
+$font-terminal: 'Orbitron', 'Consolas', 'Fira Code', 'JetBrains Mono', monospace;
+$font-mono: 'Consolas', 'Fira Code', 'JetBrains Mono', 'Monaco', monospace;
+
+// ============================================
+// 6. 状态颜色
+// ============================================
+$status-normal: $neon-green;
+$status-warning: $neon-orange;
+$status-error: $neon-red;
+$status-info: $neon-blue;
+
+// ============================================
+// 7. 间距
+// ============================================
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 16px;
+$spacing-lg: 24px;
+$spacing-xl: 32px;
+
+// ============================================
+// 8. 边框半径
+// ============================================
+$border-radius-sm: 2px;
+$border-radius-md: 4px;
+
+// ============================================
+// 9. 动画时长
+// ============================================
+$transition-fast: 0.2s;
+$transition-normal: 0.3s;
+$transition-slow: 0.5s;
+
+// ============================================
+// 10. 阴影 - 青绿色霓虹阴影
+// ============================================
+$shadow-card: 0 10px 40px rgba(0, 0, 0, 0.9), 0 0 20px rgba(0, 212, 170, 0.15);
+$shadow-card-hover: 0 20px 60px rgba(0, 0, 0, 0.95), 0 0 40px rgba(0, 212, 170, 0.3);
+$card-abyss-shadow: 0 15px 50px rgba(0, 0, 0, 0.95), 0 0 25px rgba(0, 212, 170, 0.1);
+
+// ============================================
+// 11. 渐变边框
+// ============================================
+$border-gradient-green: linear-gradient(135deg, $neon-green, $neon-cyan);
+$border-gradient-full: linear-gradient(90deg, $neon-green, $neon-cyan, $neon-green);
+
+// ============================================
+// 12. 卡片布局统一变量
+// ============================================
+$card-header-height: 80px;
+$card-services-height: 180px;
+$card-cpu-height: 70px;
+$card-footer-height: 60px;
+$card-total-min-height: 450px;

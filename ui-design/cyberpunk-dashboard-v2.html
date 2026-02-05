@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACC Monitor // CYBERPUNK DASHBOARD V2</title>
+    <style>
+        /* ===== 基础重置与字体 ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @font-face {
+            font-family: 'Cyberpunk';
+            src: local('Consolas'), local('Monaco'), local('Courier New');
+        }
+
+        :root {
+            /* V2: 更暗的配色方案 */
+            --bg-primary: #000000;
+            --bg-secondary: #030305;
+            --bg-card: rgba(5, 5, 10, 0.9);
+            /* 降低霓虹亮度 - 熄灭的霓虹灯效果 */
+            --neon-cyan: #007a75;
+            --neon-cyan-dim: #004d4a;
+            --neon-purple: #5a0080;
+            --neon-purple-dim: #3d0057;
+            --neon-green: #006633;
+            --neon-green-dim: #004422;
+            --neon-orange: #994d00;
+            --neon-orange-dim: #663300;
+            --neon-red: #990033;
+            --neon-red-dim: #660022;
+            --neon-blue: #005588;
+            /* 降低文字亮度 */
+            --text-primary: #909090;
+            --text-secondary: #505560;
+            --text-dim: #383840;
+            /* 深色边框 */
+            --border-dark: #151520;
+            --border-glow: rgba(0, 122, 117, 0.15);
+        }
+
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* ===== 暗角效果 ===== */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(ellipse at center, transparent 0%, transparent 30%, rgba(0,0,0,0.6) 100%);
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        /* ===== 噪点纹理 ===== */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            opacity: 0.025;
+            pointer-events: none;
+            z-index: 998;
+        }
+
+        /* ===== 背景粒子画布 ===== */
+        #particle-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* ===== 扫描线效果 - 更subtle ===== */
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 3px,
+                rgba(0, 80, 80, 0.008) 3px,
+                rgba(0, 80, 80, 0.008) 6px
+            );
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        /* ===== 主容器 ===== */
+        .dashboard-container {
+            position: relative;
+            z-index: 10;
+            padding: 20px;
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        /* ===== 顶部标题栏 ===== */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 30px;
+            margin-bottom: 30px;
+            background: linear-gradient(135deg, rgba(0, 122, 117, 0.03) 0%, rgba(90, 0, 128, 0.03) 100%);
+            border: 1px solid var(--border-dark);
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--neon-cyan-dim), transparent);
+            animation: headerScan 5s linear infinite;
+        }
+
+        @keyframes headerScan {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-title h1 {
+            font-size: 28px;
+            font-weight: 400;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: none;
+            filter: brightness(1.2);
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--neon-green);
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--neon-green);
+            animation: pulse 3s ease-in-out infinite;
+            box-shadow: 0 0 6px var(--neon-green-dim);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.8; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(1.1); }
+        }
+
+        .header-time {
+            text-align: right;
+        }
+
+        .header-time .time {
+            font-size: 32px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 8px rgba(0, 122, 117, 0.4);
+            letter-spacing: 2px;
+        }
+
+        .header-time .date {
+            font-size: 12px;
+            color: var(--text-dim);
+            letter-spacing: 1px;
+        }
+
+        /* ===== 统计栏 ===== */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dark);
+            border-radius: 4px;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s ease;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--neon-cyan-dim), var(--neon-purple-dim), transparent);
+        }
+
+        .stat-card:hover {
+            border-color: var(--border-dark);
+            box-shadow: 0 0 15px rgba(0, 122, 117, 0.1);
+            transform: translateY(-1px);
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-value.cyan { color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0, 122, 117, 0.4); }
+        .stat-value.green { color: var(--neon-green); text-shadow: 0 0 10px rgba(0, 102, 51, 0.4); }
+        .stat-value.orange { color: var(--neon-orange); text-shadow: 0 0 10px rgba(153, 77, 0, 0.4); }
+        .stat-value.red { color: var(--neon-red); text-shadow: 0 0 10px rgba(153, 0, 51, 0.4); }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* ===== 服务器卡片网格 ===== */
+        .servers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .server-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dark);
+            border-radius: 4px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s ease;
+        }
+
+        .server-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3px;
+            height: 100%;
+            transition: all 0.4s ease;
+        }
+
+        .server-card.status-normal::before { background: var(--neon-green); box-shadow: 0 0 8px var(--neon-green-dim); }
+        .server-card.status-warning::before { background: var(--neon-orange); box-shadow: 0 0 8px var(--neon-orange-dim); }
+        .server-card.status-error::before { background: var(--neon-red); box-shadow: 0 0 8px var(--neon-red-dim); animation: errorPulse 2s ease-in-out infinite; }
+
+        @keyframes errorPulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 0.4; }
+        }
+
+        .server-card:hover {
+            border-color: #1a1a25;
+            box-shadow: 0 0 20px rgba(0, 122, 117, 0.08);
+            transform: scale(1.01);
+        }
+
+        .server-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-dark);
+        }
+
+        .server-info h3 {
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--neon-cyan);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .server-info .ip {
+            font-size: 18px;
+            color: var(--text-primary);
+            font-family: 'Consolas', monospace;
+        }
+
+        .server-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 3px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .server-status.normal {
+            background: rgba(0, 102, 51, 0.08);
+            border: 1px solid rgba(0, 102, 51, 0.2);
+            color: var(--neon-green);
+        }
+
+        .server-status.warning {
+            background: rgba(153, 77, 0, 0.08);
+            border: 1px solid rgba(153, 77, 0, 0.2);
+            color: var(--neon-orange);
+        }
+
+        .server-status.error {
+            background: rgba(153, 0, 51, 0.08);
+            border: 1px solid rgba(153, 0, 51, 0.2);
+            color: var(--neon-red);
+            animation: statusBlink 1s ease-in-out infinite;
+        }
+
+        @keyframes statusBlink {
+            0%, 100% { opacity: 0.9; }
+            50% { opacity: 0.5; }
+        }
+
+        .server-status-icon {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 4px currentColor;
+        }
+
+        /* ===== 服务列表 ===== */
+        .services-section {
+            margin-bottom: 15px;
+        }
+
+        .services-section h4 {
+            font-size: 10px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+
+        .services-list {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .service-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 3px;
+            font-size: 11px;
+            border: 1px solid rgba(20, 20, 30, 0.5);
+        }
+
+        .service-icon {
+            width: 6px;
+            height: 6px;
+            border-radius: 2px;
+        }
+
+        .service-icon.running { background: var(--neon-green); box-shadow: 0 0 4px var(--neon-green-dim); }
+        .service-icon.stopped { background: var(--neon-red); box-shadow: 0 0 4px var(--neon-red-dim); }
+        .service-icon.warning { background: var(--neon-orange); box-shadow: 0 0 4px var(--neon-orange-dim); }
+
+        .service-name {
+            flex: 1;
+            color: var(--text-secondary);
+        }
+
+        .service-status {
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        .service-status.running { color: var(--neon-green); }
+        .service-status.stopped { color: var(--neon-red); }
+        .service-status.warning { color: var(--neon-orange); }
+
+        /* ===== 表空间进度条 ===== */
+        .tablespace-section h4 {
+            font-size: 10px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+
+        .tablespace-bar {
+            position: relative;
+            height: 22px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 3px;
+            overflow: hidden;
+            border: 1px solid var(--border-dark);
+        }
+
+        .tablespace-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.5s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tablespace-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(255, 255, 255, 0.05) 50%,
+                transparent 100%
+            );
+            animation: shimmer 4s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .tablespace-fill.low { background: linear-gradient(90deg, var(--neon-green), var(--neon-green-dim)); }
+        .tablespace-fill.medium { background: linear-gradient(90deg, var(--neon-cyan), var(--neon-blue)); }
+        .tablespace-fill.high { background: linear-gradient(90deg, var(--neon-orange), var(--neon-orange-dim)); }
+        .tablespace-fill.critical { background: linear-gradient(90deg, var(--neon-red), var(--neon-red-dim)); }
+
+        .tablespace-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 11px;
+            font-weight: bold;
+            color: #888;
+            text-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+            z-index: 10;
+        }
+
+        /* ===== 告警控制台 ===== */
+        .alert-console {
+            background: var(--bg-card);
+            border: 1px solid rgba(153, 0, 51, 0.15);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: rgba(153, 0, 51, 0.05);
+            border-bottom: 1px solid rgba(153, 0, 51, 0.1);
+        }
+
+        .alert-header h3 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--neon-red);
+        }
+
+        .alert-icon {
+            width: 8px;
+            height: 8px;
+            background: var(--neon-red);
+            border-radius: 50%;
+            animation: alertBlink 2s ease-in-out infinite;
+            box-shadow: 0 0 8px var(--neon-red-dim);
+        }
+
+        @keyframes alertBlink {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 0.3; }
+        }
+
+        .alert-count {
+            background: var(--neon-red-dim);
+            color: #999;
+            padding: 4px 12px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .alert-body {
+            height: 200px;
+            overflow: hidden;
+            position: relative;
+            background: #020202;
+            font-family: 'Consolas', monospace;
+        }
+
+        .alert-body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: linear-gradient(180deg, rgba(2, 2, 2, 0.95), transparent);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .alert-body::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: linear-gradient(0deg, rgba(2, 2, 2, 0.95), transparent);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .alert-scroll {
+            padding: 20px;
+            animation: scrollUp 30s linear infinite;
+        }
+
+        @keyframes scrollUp {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-50%); }
+        }
+
+        .alert-item {
+            display: flex;
+            gap: 15px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            font-size: 12px;
+        }
+
+        .alert-time {
+            color: var(--neon-cyan-dim);
+            white-space: nowrap;
+        }
+
+        .alert-level {
+            padding: 2px 8px;
+            border-radius: 2px;
+            font-size: 10px;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .alert-level.critical {
+            background: rgba(153, 0, 51, 0.1);
+            color: var(--neon-red);
+            border: 1px solid rgba(153, 0, 51, 0.3);
+        }
+
+        .alert-level.warning {
+            background: rgba(153, 77, 0, 0.1);
+            color: var(--neon-orange);
+            border: 1px solid rgba(153, 77, 0, 0.3);
+        }
+
+        .alert-level.info {
+            background: rgba(0, 85, 136, 0.1);
+            color: var(--neon-blue);
+            border: 1px solid rgba(0, 85, 136, 0.3);
+        }
+
+        .alert-message {
+            flex: 1;
+            color: var(--text-dim);
+        }
+
+        .alert-source {
+            color: var(--neon-purple-dim);
+            white-space: nowrap;
+        }
+
+        /* ===== 矩阵雨效果 - 更暗淡 ===== */
+        .matrix-rain {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+            opacity: 0.06;
+        }
+
+        /* ===== 六边形装饰 - 更subtle ===== */
+        .hex-decoration {
+            position: fixed;
+            width: 80px;
+            height: 80px;
+            border: 1px solid rgba(0, 122, 117, 0.05);
+            transform: rotate(45deg);
+            z-index: 0;
+        }
+
+        .hex-decoration:nth-child(1) { top: 10%; left: 5%; animation: float 12s ease-in-out infinite; }
+        .hex-decoration:nth-child(2) { top: 60%; right: 8%; animation: float 15s ease-in-out infinite reverse; }
+        .hex-decoration:nth-child(3) { bottom: 15%; left: 15%; animation: float 18s ease-in-out infinite; }
+
+        @keyframes float {
+            0%, 100% { transform: rotate(45deg) translateY(0); opacity: 0.15; }
+            50% { transform: rotate(45deg) translateY(-15px); opacity: 0.3; }
+        }
+
+        /* ===== 响应式 ===== */
+        @media (max-width: 1200px) {
+            .servers-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .servers-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-bar {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 背景效果 -->
+    <canvas id="particle-canvas"></canvas>
+    <canvas id="matrix-canvas" class="matrix-rain"></canvas>
+    <div class="scanlines"></div>
+    <div class="hex-decoration"></div>
+    <div class="hex-decoration"></div>
+    <div class="hex-decoration"></div>
+
+    <!-- 主容器 -->
+    <div class="dashboard-container">
+        <!-- 顶部标题栏 -->
+        <header class="header">
+            <div class="header-title">
+                <h1>// ACC MONITOR SYSTEM</h1>
+                <div class="header-status">
+                    <div class="status-dot"></div>
+                    <span>SYSTEM ONLINE</span>
+                </div>
+            </div>
+            <div class="header-time">
+                <div class="time" id="current-time">00:00:00</div>
+                <div class="date" id="current-date">2026-01-29</div>
+            </div>
+        </header>
+
+        <!-- 统计栏 -->
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value cyan">7</div>
+                <div class="stat-label">Total Servers</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value green">5</div>
+                <div class="stat-label">Online</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value orange">1</div>
+                <div class="stat-label">Warning</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value red">1</div>
+                <div class="stat-label">Critical</div>
+            </div>
+        </div>
+
+        <!-- 服务器卡片网格 -->
+        <div class="servers-grid">
+            <!-- 服务器 164 - 电控一线 -->
+            <div class="server-card status-normal">
+                <div class="server-header">
+                    <div class="server-info">
+                        <h3>DKYX // Electric Control Line 1</h3>
+                        <div class="ip">172.17.10.164</div>
+                    </div>
+                    <div class="server-status normal">
+                        <div class="server-status-icon"></div>
+                        <span>NORMAL</span>
+                    </div>
+                </div>
+                <div class="services-section">
+                    <h4>Core Services</h4>
+                    <div class="services-list">
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">ACC Server</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">MES Client</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Oracle DB</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Data Sync</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tablespace-section">
+                    <h4>Tablespace Usage</h4>
+                    <div class="tablespace-bar">
+                        <div class="tablespace-fill low" style="width: 42%"></div>
+                        <span class="tablespace-text">42%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 服务器 168 - 电控二线 -->
+            <div class="server-card status-normal">
+                <div class="server-header">
+                    <div class="server-info">
+                        <h3>DKEX // Electric Control Line 2</h3>
+                        <div class="ip">172.17.10.168</div>
+                    </div>
+                    <div class="server-status normal">
+                        <div class="server-status-icon"></div>
+                        <span>NORMAL</span>
+                    </div>
+                </div>
+                <div class="services-section">
+                    <h4>Core Services</h4>
+                    <div class="services-list">
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">ACC Server</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">MES Client</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Oracle DB</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Data Sync</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tablespace-section">
+                    <h4>Tablespace Usage</h4>
+                    <div class="tablespace-bar">
+                        <div class="tablespace-fill medium" style="width: 58%"></div>
+                        <span class="tablespace-text">58%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 服务器 153 - DP EPS -->
+            <div class="server-card status-warning">
+                <div class="server-header">
+                    <div class="server-info">
+                        <h3>DP_EPS // DP EPS Production</h3>
+                        <div class="ip">172.17.10.153</div>
+                    </div>
+                    <div class="server-status warning">
+                        <div class="server-status-icon"></div>
+                        <span>WARNING</span>
+                    </div>
+                </div>
+                <div class="services-section">
+                    <h4>Core Services</h4>
+                    <div class="services-list">
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">ACC Server</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon warning"></div>
+                            <span class="service-name">MES Client</span>
+                            <span class="service-status warning">SLOW</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Oracle DB</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Data Sync</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tablespace-section">
+                    <h4>Tablespace Usage</h4>
+                    <div class="tablespace-bar">
+                        <div class="tablespace-fill high" style="width: 78%"></div>
+                        <span class="tablespace-text">78%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 服务器 193 - C EPS -->
+            <div class="server-card status-normal">
+                <div class="server-header">
+                    <div class="server-info">
+                        <h3>C_EPS // C EPS Production</h3>
+                        <div class="ip">172.17.10.193</div>
+                    </div>
+                    <div class="server-status normal">
+                        <div class="server-status-icon"></div>
+                        <span>NORMAL</span>
+                    </div>
+                </div>
+                <div class="services-section">
+                    <h4>Core Services</h4>
+                    <div class="services-list">
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">ACC Server</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">MES Client</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Oracle DB</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Data Sync</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tablespace-section">
+                    <h4>Tablespace Usage</h4>
+                    <div class="tablespace-bar">
+                        <div class="tablespace-fill low" style="width: 35%"></div>
+                        <span class="tablespace-text">35%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 服务器 194 - L EPP -->
+            <div class="server-card status-normal">
+                <div class="server-header">
+                    <div class="server-info">
+                        <h3>L_EPP // L EPP Production</h3>
+                        <div class="ip">172.17.10.194</div>
+                    </div>
+                    <div class="server-status normal">
+                        <div class="server-status-icon"></div>
+                        <span>NORMAL</span>
+                    </div>
+                </div>
+                <div class="services-section">
+                    <h4>Core Services</h4>
+                    <div class="services-list">
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">ACC Server</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">MES Client</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Oracle DB</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Data Sync</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tablespace-section">
+                    <h4>Tablespace Usage</h4>
+                    <div class="tablespace-bar">
+                        <div class="tablespace-fill medium" style="width: 52%"></div>
+                        <span class="tablespace-text">52%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 服务器 165 - 共用 -->
+            <div class="server-card status-error">
+                <div class="server-header">
+                    <div class="server-info">
+                        <h3>SHARED // Common Services</h3>
+                        <div class="ip">172.17.10.165</div>
+                    </div>
+                    <div class="server-status error">
+                        <div class="server-status-icon"></div>
+                        <span>CRITICAL</span>
+                    </div>
+                </div>
+                <div class="services-section">
+                    <h4>Core Services</h4>
+                    <div class="services-list">
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">ACC Server</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon stopped"></div>
+                            <span class="service-name">MES Client</span>
+                            <span class="service-status stopped">DOWN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Oracle DB</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon stopped"></div>
+                            <span class="service-name">Data Sync</span>
+                            <span class="service-status stopped">DOWN</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tablespace-section">
+                    <h4>Tablespace Usage</h4>
+                    <div class="tablespace-bar">
+                        <div class="tablespace-fill critical" style="width: 92%"></div>
+                        <span class="tablespace-text">92%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 服务器 163 - EAI -->
+            <div class="server-card status-normal">
+                <div class="server-header">
+                    <div class="server-info">
+                        <h3>EAI // Enterprise Integration</h3>
+                        <div class="ip">172.17.10.163</div>
+                    </div>
+                    <div class="server-status normal">
+                        <div class="server-status-icon"></div>
+                        <span>NORMAL</span>
+                    </div>
+                </div>
+                <div class="services-section">
+                    <h4>Core Services</h4>
+                    <div class="services-list">
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">EAI Server</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Message Queue</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">Oracle DB</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                        <div class="service-item">
+                            <div class="service-icon running"></div>
+                            <span class="service-name">API Gateway</span>
+                            <span class="service-status running">RUN</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tablespace-section">
+                    <h4>Tablespace Usage</h4>
+                    <div class="tablespace-bar">
+                        <div class="tablespace-fill low" style="width: 28%"></div>
+                        <span class="tablespace-text">28%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 告警控制台 -->
+        <div class="alert-console">
+            <div class="alert-header">
+                <h3>
+                    <div class="alert-icon"></div>
+                    ALERT CONSOLE // REAL-TIME MONITORING
+                </h3>
+                <div class="alert-count">12 ALERTS</div>
+            </div>
+            <div class="alert-body">
+                <div class="alert-scroll" id="alert-scroll">
+                    <!-- 告警信息将由JS动态生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== 时间更新 =====
+        function updateTime() {
+            const now = new Date();
+            const time = now.toTimeString().split(' ')[0];
+            const date = now.toISOString().split('T')[0];
+            document.getElementById('current-time').textContent = time;
+            document.getElementById('current-date').textContent = date;
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // ===== 粒子背景 - 数量减少，更暗淡 =====
+        const particleCanvas = document.getElementById('particle-canvas');
+        const pCtx = particleCanvas.getContext('2d');
+
+        function resizeParticleCanvas() {
+            particleCanvas.width = window.innerWidth;
+            particleCanvas.height = window.innerHeight;
+        }
+        resizeParticleCanvas();
+        window.addEventListener('resize', resizeParticleCanvas);
+
+        const particles = [];
+        const particleCount = 40; // 减少数量
+
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = Math.random() * particleCanvas.width;
+                this.y = Math.random() * particleCanvas.height;
+                this.size = Math.random() * 1.5 + 0.3; // 更小
+                this.speedX = (Math.random() - 0.5) * 0.3; // 更慢
+                this.speedY = (Math.random() - 0.5) * 0.3;
+                this.opacity = Math.random() * 0.2 + 0.05; // 更暗
+                this.color = Math.random() > 0.5 ? '#007a75' : '#5a0080'; // 暗色
+            }
+
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+
+                if (this.x < 0 || this.x > particleCanvas.width ||
+                    this.y < 0 || this.y > particleCanvas.height) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                pCtx.beginPath();
+                pCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                pCtx.fillStyle = this.color;
+                pCtx.globalAlpha = this.opacity;
+                pCtx.fill();
+                pCtx.globalAlpha = 1;
+            }
+        }
+
+        for (let i = 0; i < particleCount; i++) {
+            particles.push(new Particle());
+        }
+
+        function animateParticles() {
+            pCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+
+            // 绘制连接线 - 更暗
+            particles.forEach((p1, i) => {
+                particles.slice(i + 1).forEach(p2 => {
+                    const dx = p1.x - p2.x;
+                    const dy = p1.y - p2.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < 120) {
+                        pCtx.beginPath();
+                        pCtx.moveTo(p1.x, p1.y);
+                        pCtx.lineTo(p2.x, p2.y);
+                        pCtx.strokeStyle = `rgba(0, 77, 74, ${0.05 * (1 - dist / 120)})`; // 更暗
+                        pCtx.stroke();
+                    }
+                });
+            });
+
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
+            requestAnimationFrame(animateParticles);
+        }
+        animateParticles();
+
+        // ===== 矩阵雨效果 - 更暗淡，若隐若现 =====
+        const matrixCanvas = document.getElementById('matrix-canvas');
+        const mCtx = matrixCanvas.getContext('2d');
+
+        function resizeMatrixCanvas() {
+            matrixCanvas.width = window.innerWidth;
+            matrixCanvas.height = window.innerHeight;
+        }
+        resizeMatrixCanvas();
+        window.addEventListener('resize', resizeMatrixCanvas);
+
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()';
+        const fontSize = 14;
+        const columns = matrixCanvas.width / fontSize;
+        const drops = Array(Math.floor(columns)).fill(1);
+
+        function drawMatrix() {
+            mCtx.fillStyle = 'rgba(0, 0, 0, 0.03)'; // 更慢的消失速度
+            mCtx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+
+            mCtx.fillStyle = '#004d4a'; // 更暗的颜色
+            mCtx.font = fontSize + 'px monospace';
+
+            drops.forEach((y, i) => {
+                const char = chars[Math.floor(Math.random() * chars.length)];
+                const x = i * fontSize;
+                mCtx.globalAlpha = Math.random() * 0.3 + 0.1; // 随机透明度
+                mCtx.fillText(char, x, y * fontSize);
+                mCtx.globalAlpha = 1;
+
+                if (y * fontSize > matrixCanvas.height && Math.random() > 0.98) {
+                    drops[i] = 0;
+                }
+                drops[i]++;
+            });
+        }
+        setInterval(drawMatrix, 80); // 更慢的更新速度
+
+        // ===== 告警信息 =====
+        const alerts = [
+            { time: '13:42:15', level: 'critical', message: '[165] MES Client service stopped unexpectedly', source: 'SHARED' },
+            { time: '13:41:58', level: 'critical', message: '[165] Data Sync service connection timeout', source: 'SHARED' },
+            { time: '13:40:22', level: 'warning', message: '[153] MES Client response time exceeded threshold (>2000ms)', source: 'DP_EPS' },
+            { time: '13:38:45', level: 'critical', message: '[165] Tablespace usage critical: 92% used', source: 'SHARED' },
+            { time: '13:35:11', level: 'warning', message: '[153] Tablespace usage high: 78% used', source: 'DP_EPS' },
+            { time: '13:32:08', level: 'info', message: '[168] Scheduled backup completed successfully', source: 'DKEX' },
+            { time: '13:28:44', level: 'info', message: '[164] Oracle listener restarted', source: 'DKYX' },
+            { time: '13:25:19', level: 'warning', message: '[165] Memory usage above 80%', source: 'SHARED' },
+            { time: '13:22:33', level: 'info', message: '[163] API Gateway health check passed', source: 'EAI' },
+            { time: '13:18:57', level: 'info', message: '[193] Data sync completed: 15,847 records', source: 'C_EPS' },
+            { time: '13:15:42', level: 'info', message: '[194] Scheduled maintenance window started', source: 'L_EPP' },
+            { time: '13:12:28', level: 'warning', message: '[165] CPU usage spike detected: 95%', source: 'SHARED' },
+        ];
+
+        function renderAlerts() {
+            const scrollContainer = document.getElementById('alert-scroll');
+            let html = '';
+
+            // 复制两份实现无缝滚动
+            for (let i = 0; i < 2; i++) {
+                alerts.forEach(alert => {
+                    html += `
+                        <div class="alert-item">
+                            <span class="alert-time">${alert.time}</span>
+                            <span class="alert-level ${alert.level}">${alert.level.toUpperCase()}</span>
+                            <span class="alert-message">${alert.message}</span>
+                            <span class="alert-source">[${alert.source}]</span>
+                        </div>
+                    `;
+                });
+            }
+
+            scrollContainer.innerHTML = html;
+        }
+        renderAlerts();
+
+        // ===== 动态添加新告警（模拟实时效果）- 频率降低 =====
+        function addRandomAlert() {
+            const servers = ['DKYX', 'DKEX', 'DP_EPS', 'C_EPS', 'L_EPP', 'SHARED', 'EAI'];
+            const messages = [
+                'Connection pool exhausted, scaling up',
+                'Query execution time exceeded threshold',
+                'Network latency spike detected',
+                'Cache hit ratio dropped below 80%',
+                'Thread pool saturation warning',
+                'Disk I/O wait time increased'
+            ];
+            const levels = ['info', 'warning', 'info', 'info', 'warning', 'info'];
+
+            const now = new Date();
+            const time = now.toTimeString().split(' ')[0];
+            const server = servers[Math.floor(Math.random() * servers.length)];
+            const msgIndex = Math.floor(Math.random() * messages.length);
+
+            const newAlert = {
+                time: time,
+                level: levels[msgIndex],
+                message: `[${server}] ${messages[msgIndex]}`,
+                source: server
+            };
+
+            alerts.unshift(newAlert);
+            if (alerts.length > 20) alerts.pop();
+            renderAlerts();
+        }
+
+        // 每45秒添加一条新告警（降低频率）
+        setInterval(addRandomAlert, 45000);
+    </script>
+</body>
+</html>
