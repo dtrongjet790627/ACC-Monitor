@@ -546,35 +546,60 @@ $cyber-red: #ff3333;
   height: calc(100vh - 80px);
 }
 
-// Left: Servers Section (70%) - Monitor Wall / Control Room Container - Semi-transparent
+// Left: Servers Section (70%) - Server Rack / Control Room Cabinet
 .servers-section {
   flex: 7;
   min-width: 0;
   position: relative;
   overflow: hidden;
 
-  // Control Room / Server Rack Background - More transparent to show matrix rain
+  // Server Rack Cabinet Background
   background:
-    // Subtle grid pattern for rack/industrial feel
-    linear-gradient(rgba(0, 212, 170, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 212, 170, 0.02) 1px, transparent 1px),
-    // Deep gradient background - increased transparency
+    // Metal mesh/grille pattern (hexagonal holes)
+    radial-gradient(circle at center, transparent 2px, rgba(0, 0, 0, 0.15) 2px, rgba(0, 0, 0, 0.15) 3px, transparent 3px),
+    // Subtle vertical rack rail lines
+    repeating-linear-gradient(90deg,
+      transparent 0px,
+      transparent 48px,
+      rgba(40, 40, 45, 0.4) 48px,
+      rgba(40, 40, 45, 0.4) 50px,
+      transparent 50px,
+      transparent 98px,
+      rgba(40, 40, 45, 0.4) 98px,
+      rgba(40, 40, 45, 0.4) 100px
+    ),
+    // Horizontal rack unit lines
+    repeating-linear-gradient(0deg,
+      transparent 0px,
+      transparent 23px,
+      rgba(30, 30, 35, 0.3) 23px,
+      rgba(30, 30, 35, 0.3) 24px
+    ),
+    // Main cabinet gradient
     linear-gradient(180deg,
-      rgba(8, 8, 12, 0.5) 0%,
-      rgba(12, 12, 18, 0.55) 50%,
-      rgba(8, 8, 12, 0.5) 100%);
+      rgba(18, 18, 22, 0.85) 0%,
+      rgba(12, 12, 16, 0.9) 30%,
+      rgba(8, 8, 12, 0.92) 70%,
+      rgba(5, 5, 8, 0.85) 100%
+    );
   background-size:
-    40px 40px,
-    40px 40px,
+    12px 12px,
+    100px 100%,
+    100% 24px,
     100% 100%;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 212, 170, 0.15);
+  border-radius: 6px;
+  border: 2px solid rgba(50, 50, 55, 0.6);
   box-shadow:
-    inset 0 0 60px rgba(0, 0, 0, 0.3),
-    inset 0 0 100px rgba(0, 0, 0, 0.2),
-    0 0 20px rgba(0, 0, 0, 0.3);
+    // Outer cabinet frame shadow
+    0 0 30px rgba(0, 0, 0, 0.5),
+    0 10px 40px rgba(0, 0, 0, 0.4),
+    // Inner depth shadow
+    inset 0 0 80px rgba(0, 0, 0, 0.5),
+    inset 0 0 120px rgba(0, 0, 0, 0.3),
+    // Subtle cyan glow from monitors
+    inset 0 0 60px rgba(0, 212, 170, 0.03);
 
-  // Rack frame effect on edges - lighter shadows
+  // Rack Frame Rails (Left & Right)
   &::before {
     content: '';
     position: absolute;
@@ -582,29 +607,72 @@ $cyber-red: #ff3333;
     left: 0;
     right: 0;
     bottom: 0;
-    border-radius: 8px;
+    border-radius: 6px;
     pointer-events: none;
     z-index: 1;
+    // Frame rails on sides
+    background:
+      // Left rail
+      linear-gradient(90deg,
+        rgba(35, 35, 40, 0.8) 0px,
+        rgba(45, 45, 50, 0.6) 4px,
+        rgba(25, 25, 30, 0.9) 8px,
+        transparent 12px
+      ),
+      // Right rail
+      linear-gradient(270deg,
+        rgba(35, 35, 40, 0.8) 0px,
+        rgba(45, 45, 50, 0.6) 4px,
+        rgba(25, 25, 30, 0.9) 8px,
+        transparent 12px
+      ),
+      // Top frame
+      linear-gradient(180deg,
+        rgba(40, 40, 45, 0.7) 0px,
+        rgba(30, 30, 35, 0.5) 3px,
+        rgba(20, 20, 25, 0.8) 6px,
+        transparent 10px
+      ),
+      // Bottom frame
+      linear-gradient(0deg,
+        rgba(25, 25, 30, 0.8) 0px,
+        rgba(35, 35, 40, 0.5) 3px,
+        rgba(20, 20, 25, 0.7) 6px,
+        transparent 10px
+      );
+    background-size:
+      12px 100%,
+      12px 100%,
+      100% 10px,
+      100% 10px;
+    background-position:
+      left top,
+      right top,
+      top left,
+      bottom left;
+    background-repeat:
+      no-repeat;
     box-shadow:
-      inset 4px 0 8px rgba(0, 0, 0, 0.2),
-      inset -4px 0 8px rgba(0, 0, 0, 0.2),
-      inset 0 4px 8px rgba(0, 0, 0, 0.15),
-      inset 0 -4px 8px rgba(0, 0, 0, 0.15);
+      // Inner frame depth
+      inset 6px 0 12px rgba(0, 0, 0, 0.3),
+      inset -6px 0 12px rgba(0, 0, 0, 0.3),
+      inset 0 6px 12px rgba(0, 0, 0, 0.25),
+      inset 0 -6px 12px rgba(0, 0, 0, 0.25);
   }
 
-  // Top edge highlight
+  // Top edge highlight (cabinet edge reflection)
   &::after {
     content: '';
     position: absolute;
     top: 0;
-    left: 20px;
-    right: 20px;
+    left: 15px;
+    right: 15px;
     height: 1px;
     background: linear-gradient(90deg,
       transparent 0%,
-      rgba(0, 212, 170, 0.2) 20%,
-      rgba(0, 212, 170, 0.4) 50%,
-      rgba(0, 212, 170, 0.2) 80%,
+      rgba(80, 80, 85, 0.4) 15%,
+      rgba(100, 100, 105, 0.5) 50%,
+      rgba(80, 80, 85, 0.4) 85%,
       transparent 100%);
     z-index: 2;
   }
