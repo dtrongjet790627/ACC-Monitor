@@ -11,6 +11,7 @@ export default defineConfig({
   },
   server: {
     port: 3004,
+    strictPort: true,  // 禁止自动更换端口，端口被占用时直接报错
     proxy: {
       '/api': {
         target: 'http://localhost:5002',

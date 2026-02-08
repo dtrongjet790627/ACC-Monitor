@@ -685,17 +685,17 @@ $stand-color: #1a1a1a;
     inset 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
 
-// Screen Area with CRT curvature simulation
+// Screen Area with CRT curvature simulation - semi-transparent for matrix rain
 .screen-area {
   width: 100%;
   height: 100%;
-  background: rgba(8, 10, 12, 0.9);
+  background: rgba(8, 10, 12, 0.85);
   border-radius: 4px;
   position: relative;
   overflow: hidden;
   box-shadow:
-    inset 0 0 30px rgba(0, 0, 0, 0.6),
-    inset 0 0 60px rgba(0, 0, 0, 0.4);
+    inset 0 0 30px rgba(0, 0, 0, 0.5),
+    inset 0 0 60px rgba(0, 0, 0, 0.3);
 }
 
 // CRT Edge Vignette (curved screen effect)

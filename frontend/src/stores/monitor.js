@@ -66,6 +66,78 @@ export const useMonitorStore = defineStore('monitor', () => {
     }
   }
 
+  // 更新服务器完整状态（用于重连后的状态刷新）
+  function updateFullServerStatus(serverData) {
+    const index = servers.value.findIndex(s => s.id === serverData.id)
+    if (index !== -1) {
+      const config = SERVER_CONFIG[serverData.id] || {}
+      servers.value[index] = {
+        id: serverData.id,
+        name: serverData.name_cn || serverData.name,
+        fullName: serverData.name,
+        ip: serverData.ip,
+        status: serverData.status,
+        serverType: serverData.os_type === 'linux' ? 'docker' : 'production',
+        processes: (serverData.processes || []).map(p => ({
+          name: p.name,
+          status: p.status,
+          pid: p.pid,
+          memory: p.memory,
+          type: p.type || 'process',
+          dataSource: p.data_source
+        })),
+        tablespaceUsage: serverData.disk_usage || 0,
+        cpuUsage: serverData.cpu_usage || 0,
+        memoryUsage: serverData.memory_usage || 0,
+        dataSource: serverData.data_source,
+        connectionInfo: serverData.connection_info,
+        sortOrder: config.sortOrder || 99
+      }
+      console.log(`[Store] Updated full status for server ${serverData.id}:`, serverData.status)
+    }
+  }
+
+  // 处理服务器恢复事件
+  function handleServerRecovered(serverId, offlineDuration) {
+    console.log(`[Store] Server ${serverId} recovered after ${offlineDuration}s`)
+    // 添加恢复告警
+    addAlert({
+      level: 'info',
+      message: `Server ${serverId} connection recovered (was offline for ${Math.round(offlineDuration)}s)`,
+      source: 'connection'
+    })
+    // 触发立即刷新该服务器状态
+    fetchServers()
+  }
+
+  // 处理服务器离线事件
+  function handleServerOffline(serverId) {
+    console.log(`[Store] Server ${serverId} went offline`)
+    const server = servers.value.find(s => s.id === serverId)
+    if (server) {
+      server.status = 'offline'
+    }
+    // 添加离线告警
+    addAlert({
+      level: 'warning',
+      message: `Server ${serverId} connection lost`,
+      source: 'connection'
+    })
+  }
+
+  // 处理连接状态变化
+  function handleConnectionStateChange(serverId, newState, oldState) {
+    console.log(`[Store] Server ${serverId} state changed: ${oldState} -> ${newState}`)
+    const server = servers.value.find(s => s.id === serverId)
+    if (server && newState) {
+      // Map connection state to server status if needed
+      if (newState === 'recovered') {
+        // Will be updated by full status refresh
+        fetchServers()
+      }
+    }
+  }
+
   // 添加告警
   function addAlert(alert) {
     alerts.value.unshift({
@@ -160,6 +232,10 @@ export const useMonitorStore = defineStore('monitor', () => {
     offlineServers,
     alertCount,
     updateServerStatus,
+    updateFullServerStatus,
+    handleServerRecovered,
+    handleServerOffline,
+    handleConnectionStateChange,
     addAlert,
     getServerById,
     fetchServers,

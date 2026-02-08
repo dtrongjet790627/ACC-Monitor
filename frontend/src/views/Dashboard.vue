@@ -349,17 +349,19 @@ $cyber-red: #ff3333;
   padding: 0;
   display: flex;
   flex-direction: column;
+  // Transparent background to show matrix rain
+  background: transparent;
 }
 
-// Top Status Bar - ENLARGED with transparency for matrix rain visibility
+// Top Status Bar - ENLARGED with high transparency for matrix rain visibility
 .top-status-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px 32px;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   border-bottom: 2px solid rgba($cyber-cyan, 0.4);
   font-family: $font-mono;
   flex-shrink: 0;
@@ -564,7 +566,7 @@ $cyber-red: #ff3333;
   }
 }
 
-// Main Content
+// Main Content - transparent for matrix rain visibility
 .main-content {
   flex: 1;
   display: flex;
@@ -572,9 +574,11 @@ $cyber-red: #ff3333;
   gap: 24px;
   overflow: hidden;
   height: calc(100vh - 80px);
+  // Transparent background to show matrix rain
+  background: transparent;
 }
 
-// Left: Servers Section (70%) - Real Server Rack Cabinet
+// Left: Servers Section (70%) - Real Server Rack Cabinet with Tech Style
 .servers-section {
   flex: 7;
   min-width: 0;
@@ -582,31 +586,58 @@ $cyber-red: #ff3333;
   overflow: visible;
   margin: 8px 0;
 
-  // Server Rack Cabinet Frame - Main container with 3D depth
-  background: linear-gradient(180deg,
-    #1a1a1e 0%,
-    #141418 50%,
-    #0e0e12 100%
-  );
+  // Server Rack Cabinet Frame - Semi-transparent with tech style
+  background:
+    // Brushed metal texture overlay
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 1px,
+      rgba(255, 255, 255, 0.01) 1px,
+      rgba(255, 255, 255, 0.01) 2px
+    ),
+    // Horizontal scan lines
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 3px,
+      rgba(0, 212, 170, 0.015) 3px,
+      rgba(0, 212, 170, 0.015) 4px
+    ),
+    // Circuit board pattern
+    radial-gradient(circle at 10% 20%, rgba(0, 212, 170, 0.03) 0%, transparent 20%),
+    radial-gradient(circle at 90% 80%, rgba(0, 212, 170, 0.03) 0%, transparent 20%),
+    radial-gradient(circle at 50% 50%, rgba(0, 212, 170, 0.02) 0%, transparent 40%),
+    // Main gradient with transparency for matrix rain
+    linear-gradient(180deg,
+      rgba(20, 20, 24, 0.85) 0%,
+      rgba(14, 14, 18, 0.80) 50%,
+      rgba(10, 10, 14, 0.85) 100%
+    );
   border-radius: 8px;
 
-  // Cabinet outer frame (thick metal border)
-  border: none;
+  // Glowing border for tech style
+  border: 1px solid rgba($cyber-cyan, 0.25);
+
+  // Enhanced shadow with cyan glow
   box-shadow:
-    // Outer cabinet frame
-    0 0 0 3px #2a2a2e,
-    0 0 0 6px #1e1e22,
-    0 0 0 8px #161618,
+    // Outer cabinet frame with metal look
+    0 0 0 2px rgba(40, 40, 45, 0.9),
+    0 0 0 4px rgba(25, 25, 30, 0.95),
+    // Cyan glow edge
+    0 0 20px rgba($cyber-cyan, 0.1),
+    0 0 40px rgba($cyber-cyan, 0.05),
     // 3D depth shadow
     0 8px 32px rgba(0, 0, 0, 0.6),
     0 16px 48px rgba(0, 0, 0, 0.4),
-    // Inner depth
-    inset 0 0 60px rgba(0, 0, 0, 0.5),
-    // Subtle cyan glow from monitors inside
-    inset 0 0 40px rgba(0, 212, 170, 0.02);
+    // Inner depth with subtle glow
+    inset 0 0 60px rgba(0, 0, 0, 0.4),
+    inset 0 0 30px rgba(0, 212, 170, 0.04),
+    // Inner edge highlight
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-// Rack Cabinet Top Panel (with ventilation grilles)
+// Rack Cabinet Top Panel (with ventilation grilles and tech style)
 .servers-section::before {
   content: '';
   position: absolute;
@@ -616,34 +647,44 @@ $cyber-red: #ff3333;
   height: 20px;
   pointer-events: none;
   z-index: 10;
-  // Top panel with ventilation holes
+  // Top panel with ventilation holes and cyan accents
   background:
-    // Ventilation grille pattern
+    // Ventilation grille pattern with slight cyan tint
     repeating-linear-gradient(90deg,
       transparent 0px,
       transparent 4px,
-      rgba(15, 15, 18, 0.95) 4px,
-      rgba(15, 15, 18, 0.95) 6px
+      rgba(10, 15, 15, 0.92) 4px,
+      rgba(10, 15, 15, 0.92) 6px
     ),
-    // Top panel base
+    // Cyan highlight line
+    linear-gradient(90deg,
+      transparent 0%,
+      transparent 20%,
+      rgba(0, 212, 170, 0.1) 50%,
+      transparent 80%,
+      transparent 100%
+    ),
+    // Top panel base with metal gradient
     linear-gradient(180deg,
-      #2a2a2e 0%,
-      #222226 40%,
-      #1a1a1e 100%
+      rgba(35, 38, 42, 0.95) 0%,
+      rgba(28, 30, 34, 0.95) 40%,
+      rgba(22, 24, 28, 0.95) 100%
     );
   border-radius: 6px 6px 0 0;
   box-shadow:
     // Top panel depth
     0 -2px 8px rgba(0, 0, 0, 0.4),
     inset 0 2px 4px rgba(60, 60, 65, 0.15),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.3);
-  // Metal edge highlight
-  border-top: 1px solid rgba(70, 70, 75, 0.4);
+    inset 0 -2px 4px rgba(0, 0, 0, 0.3),
+    // Subtle cyan glow on top edge
+    0 -1px 10px rgba(0, 212, 170, 0.08);
+  // Metal edge highlight with cyan tint
+  border-top: 1px solid rgba(0, 212, 170, 0.2);
   border-left: 1px solid rgba(60, 60, 65, 0.3);
   border-right: 1px solid rgba(60, 60, 65, 0.3);
 }
 
-// Rack Cabinet Bottom Panel (with feet/casters)
+// Rack Cabinet Bottom Panel (with feet/casters and tech style)
 .servers-section::after {
   content: '';
   position: absolute;
@@ -653,36 +694,46 @@ $cyber-red: #ff3333;
   height: 24px;
   pointer-events: none;
   z-index: 10;
-  // Bottom panel with caster/feet indicators
+  // Bottom panel with caster/feet indicators and tech accents
   background:
     // Caster wheel indicators
-    radial-gradient(ellipse 20px 8px at 60px 16px, #1a1a1e 0%, transparent 100%),
-    radial-gradient(ellipse 20px 8px at calc(100% - 60px) 16px, #1a1a1e 0%, transparent 100%),
-    // Ventilation grille
+    radial-gradient(ellipse 20px 8px at 60px 16px, rgba(20, 22, 25, 0.95) 0%, transparent 100%),
+    radial-gradient(ellipse 20px 8px at calc(100% - 60px) 16px, rgba(20, 22, 25, 0.95) 0%, transparent 100%),
+    // Ventilation grille with cyan tint
     repeating-linear-gradient(90deg,
       transparent 0px,
       transparent 4px,
-      rgba(15, 15, 18, 0.95) 4px,
-      rgba(15, 15, 18, 0.95) 6px
+      rgba(10, 15, 15, 0.92) 4px,
+      rgba(10, 15, 15, 0.92) 6px
     ),
-    // Bottom panel base
+    // Cyan highlight line
+    linear-gradient(90deg,
+      transparent 0%,
+      transparent 30%,
+      rgba(0, 212, 170, 0.08) 50%,
+      transparent 70%,
+      transparent 100%
+    ),
+    // Bottom panel base with metal gradient
     linear-gradient(0deg,
-      #1a1a1e 0%,
-      #222226 60%,
-      #2a2a2e 100%
+      rgba(22, 24, 28, 0.95) 0%,
+      rgba(28, 30, 34, 0.95) 60%,
+      rgba(35, 38, 42, 0.95) 100%
     );
   border-radius: 0 0 6px 6px;
   box-shadow:
     // Bottom panel depth
     0 4px 12px rgba(0, 0, 0, 0.5),
     inset 0 -2px 4px rgba(60, 60, 65, 0.1),
-    inset 0 2px 4px rgba(0, 0, 0, 0.3);
-  border-bottom: 1px solid rgba(40, 40, 45, 0.5);
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    // Subtle cyan glow on bottom edge
+    0 2px 10px rgba(0, 212, 170, 0.06);
+  border-bottom: 1px solid rgba(0, 212, 170, 0.15);
   border-left: 1px solid rgba(50, 50, 55, 0.3);
   border-right: 1px solid rgba(50, 50, 55, 0.3);
 }
 
-// Server Cards Grid - 4x2 layout inside rack cabinet
+// Server Cards Grid - 4x2 layout inside rack cabinet with tech style
 .servers-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -694,7 +745,7 @@ $cyber-red: #ff3333;
   position: relative;
   z-index: 5;
 
-  // Inner rack structure with U-rails
+  // Inner rack structure with U-rails and tech styling
   &::before {
     content: '';
     position: absolute;
@@ -706,61 +757,63 @@ $cyber-red: #ff3333;
     z-index: 0;
     border-radius: 4px;
 
-    // Left and Right vertical rack rails (U-slot pattern)
+    // Left and Right vertical rack rails with cyan accents
     background:
-      // Left U-rail
+      // Left U-rail with metal gradient
       linear-gradient(90deg,
-        #1e1e22 0px,
-        #2a2a2e 2px,
-        #323236 4px,
-        #2a2a2e 6px,
-        #222226 8px,
+        rgba(25, 28, 32, 0.95) 0px,
+        rgba(35, 38, 42, 0.95) 2px,
+        rgba(45, 48, 52, 0.95) 4px,
+        rgba(35, 38, 42, 0.95) 6px,
+        rgba(28, 31, 35, 0.95) 8px,
         transparent 14px
       ),
-      // Left rail mounting holes (repeating pattern)
+      // Left rail mounting holes with cyan glow
       repeating-linear-gradient(0deg,
         transparent 0px,
         transparent 20px,
-        rgba(10, 10, 12, 0.8) 20px,
-        rgba(10, 10, 12, 0.8) 24px,
+        rgba(0, 212, 170, 0.08) 20px,
+        rgba(8, 12, 14, 0.9) 22px,
+        rgba(0, 212, 170, 0.08) 24px,
         transparent 24px,
         transparent 44px
       ),
-      // Right U-rail
+      // Right U-rail with metal gradient
       linear-gradient(270deg,
-        #1e1e22 0px,
-        #2a2a2e 2px,
-        #323236 4px,
-        #2a2a2e 6px,
-        #222226 8px,
+        rgba(25, 28, 32, 0.95) 0px,
+        rgba(35, 38, 42, 0.95) 2px,
+        rgba(45, 48, 52, 0.95) 4px,
+        rgba(35, 38, 42, 0.95) 6px,
+        rgba(28, 31, 35, 0.95) 8px,
         transparent 14px
       ),
-      // Right rail mounting holes
+      // Right rail mounting holes with cyan glow
       repeating-linear-gradient(0deg,
         transparent 0px,
         transparent 20px,
-        rgba(10, 10, 12, 0.8) 20px,
-        rgba(10, 10, 12, 0.8) 24px,
+        rgba(0, 212, 170, 0.08) 20px,
+        rgba(8, 12, 14, 0.9) 22px,
+        rgba(0, 212, 170, 0.08) 24px,
         transparent 24px,
         transparent 44px
       ),
-      // Horizontal rack unit dividers
+      // Horizontal rack unit dividers with subtle cyan tint
       repeating-linear-gradient(0deg,
         transparent 0%,
         transparent calc(50% - 2px),
-        rgba(30, 30, 35, 0.5) calc(50% - 2px),
-        rgba(35, 35, 40, 0.6) 50%,
-        rgba(30, 30, 35, 0.5) calc(50% + 2px),
+        rgba(0, 212, 170, 0.04) calc(50% - 2px),
+        rgba(35, 40, 45, 0.6) 50%,
+        rgba(0, 212, 170, 0.04) calc(50% + 2px),
         transparent calc(50% + 2px),
         transparent 100%
       ),
-      // Inner cabinet depth gradient
+      // Inner cabinet depth gradient (transparent for matrix rain)
       linear-gradient(180deg,
-        rgba(0, 0, 0, 0.3) 0%,
-        rgba(0, 0, 0, 0.1) 20%,
+        rgba(0, 0, 0, 0.15) 0%,
+        rgba(0, 0, 0, 0.05) 20%,
         transparent 50%,
-        rgba(0, 0, 0, 0.1) 80%,
-        rgba(0, 0, 0, 0.3) 100%
+        rgba(0, 0, 0, 0.05) 80%,
+        rgba(0, 0, 0, 0.15) 100%
       );
     background-size:
       14px 100%,
@@ -784,13 +837,14 @@ $cyber-red: #ff3333;
       no-repeat,
       no-repeat;
 
-    // Inner shadow for depth
+    // Inner shadow with subtle cyan glow
     box-shadow:
-      inset 0 0 40px rgba(0, 0, 0, 0.4),
-      inset 0 0 80px rgba(0, 0, 0, 0.2);
+      inset 0 0 40px rgba(0, 0, 0, 0.3),
+      inset 0 0 80px rgba(0, 0, 0, 0.15),
+      inset 0 0 20px rgba(0, 212, 170, 0.02);
   }
 
-  // Subtle mesh/grille overlay for airflow visual
+  // Tech-style mesh/grille overlay
   &::after {
     content: '';
     position: absolute;
@@ -800,11 +854,11 @@ $cyber-red: #ff3333;
     bottom: 8px;
     pointer-events: none;
     z-index: 1;
-    // Hexagonal mesh pattern (ventilation)
+    // Hexagonal mesh pattern with cyan tint
     background:
-      radial-gradient(circle at center, transparent 1px, rgba(0, 0, 0, 0.05) 1px, rgba(0, 0, 0, 0.05) 2px, transparent 2px);
+      radial-gradient(circle at center, transparent 1px, rgba(0, 212, 170, 0.015) 1px, rgba(0, 0, 0, 0.03) 2px, transparent 2px);
     background-size: 8px 8px;
-    opacity: 0.5;
+    opacity: 0.6;
   }
 }
 
@@ -819,7 +873,7 @@ $cyber-red: #ff3333;
   z-index: 8;
 }
 
-// Cabinet Top Bar with handles and label
+// Cabinet Top Bar with handles and label - Tech style
 .cabinet-top {
   position: absolute;
   top: 8px;
@@ -830,32 +884,43 @@ $cyber-red: #ff3333;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  background: linear-gradient(180deg,
-    rgba(45, 45, 50, 0.8) 0%,
-    rgba(35, 35, 40, 0.9) 50%,
-    rgba(25, 25, 30, 0.9) 100%
-  );
+  background:
+    // Brushed metal texture
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 1px,
+      rgba(255, 255, 255, 0.015) 1px,
+      rgba(255, 255, 255, 0.015) 2px
+    ),
+    linear-gradient(180deg,
+      rgba(50, 55, 60, 0.85) 0%,
+      rgba(38, 42, 48, 0.9) 50%,
+      rgba(28, 32, 38, 0.9) 100%
+    );
   border-radius: 4px;
-  border: 1px solid rgba(60, 60, 65, 0.5);
+  border: 1px solid rgba(0, 212, 170, 0.2);
   box-shadow:
-    inset 0 1px 0 rgba(80, 80, 85, 0.2),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+    inset 0 1px 0 rgba(100, 105, 110, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 0 15px rgba(0, 212, 170, 0.05);
 }
 
-// Door handles
+// Door handles with metal finish and cyan accent
 .handle-left, .handle-right {
   width: 32px;
   height: 8px;
   background: linear-gradient(180deg,
-    #4a4a4e 0%,
-    #3a3a3e 40%,
-    #2a2a2e 100%
+    rgba(70, 75, 80, 0.95) 0%,
+    rgba(50, 55, 60, 0.95) 40%,
+    rgba(35, 40, 45, 0.95) 100%
   );
   border-radius: 2px;
-  border: 1px solid rgba(70, 70, 75, 0.5);
+  border: 1px solid rgba(0, 212, 170, 0.15);
   box-shadow:
-    inset 0 1px 0 rgba(90, 90, 95, 0.3),
-    0 1px 3px rgba(0, 0, 0, 0.4);
+    inset 0 1px 0 rgba(100, 105, 110, 0.25),
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    0 0 6px rgba(0, 212, 170, 0.08);
 }
 
 // Cabinet label
@@ -867,7 +932,7 @@ $cyber-red: #ff3333;
   text-shadow: 0 0 8px rgba($cyber-cyan, 0.3);
 }
 
-// Left Rail with LEDs
+// Left Rail with LEDs - Tech style with metal finish
 .cabinet-rail-left {
   position: absolute;
   left: 16px;
@@ -879,13 +944,25 @@ $cyber-red: #ff3333;
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  background: linear-gradient(90deg,
-    rgba(35, 35, 40, 0.6) 0%,
-    rgba(28, 28, 32, 0.8) 50%,
-    rgba(35, 35, 40, 0.6) 100%
-  );
+  background:
+    // Brushed metal vertical
+    repeating-linear-gradient(
+      180deg,
+      transparent 0px,
+      transparent 1px,
+      rgba(255, 255, 255, 0.02) 1px,
+      rgba(255, 255, 255, 0.02) 2px
+    ),
+    linear-gradient(90deg,
+      rgba(40, 45, 50, 0.7) 0%,
+      rgba(30, 35, 40, 0.85) 50%,
+      rgba(40, 45, 50, 0.7) 100%
+    );
   border-radius: 3px;
-  border: 1px solid rgba(50, 50, 55, 0.4);
+  border: 1px solid rgba(0, 212, 170, 0.12);
+  box-shadow:
+    inset 0 0 10px rgba(0, 0, 0, 0.3),
+    0 0 8px rgba(0, 212, 170, 0.05);
 }
 
 // Status LEDs
@@ -926,19 +1003,20 @@ $cyber-red: #ff3333;
   50% { opacity: 0.2; }
 }
 
-// Rail screws
+// Rail screws with metal finish
 .rail-screw {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: linear-gradient(135deg,
-    #4a4a4e 0%,
-    #3a3a3e 30%,
-    #2a2a2e 70%,
-    #3a3a3e 100%
+    rgba(70, 75, 80, 0.95) 0%,
+    rgba(55, 60, 65, 0.95) 30%,
+    rgba(40, 45, 50, 0.95) 70%,
+    rgba(55, 60, 65, 0.95) 100%
   );
-  border: 1px solid rgba(60, 60, 65, 0.4);
+  border: 1px solid rgba(0, 212, 170, 0.1);
   margin-top: auto;
+  box-shadow: 0 0 4px rgba(0, 212, 170, 0.05);
 
   &:last-child {
     margin-top: 8px;
@@ -951,12 +1029,12 @@ $cyber-red: #ff3333;
     display: block;
     width: 5px;
     height: 1px;
-    background: rgba(20, 20, 25, 0.8);
+    background: rgba(15, 20, 25, 0.85);
     margin: 3px auto 0;
   }
 }
 
-// Right Rail with ventilation
+// Right Rail with ventilation - Tech style with metal finish
 .cabinet-rail-right {
   position: absolute;
   right: 16px;
@@ -968,16 +1046,28 @@ $cyber-red: #ff3333;
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  background: linear-gradient(270deg,
-    rgba(35, 35, 40, 0.6) 0%,
-    rgba(28, 28, 32, 0.8) 50%,
-    rgba(35, 35, 40, 0.6) 100%
-  );
+  background:
+    // Brushed metal vertical
+    repeating-linear-gradient(
+      180deg,
+      transparent 0px,
+      transparent 1px,
+      rgba(255, 255, 255, 0.02) 1px,
+      rgba(255, 255, 255, 0.02) 2px
+    ),
+    linear-gradient(270deg,
+      rgba(40, 45, 50, 0.7) 0%,
+      rgba(30, 35, 40, 0.85) 50%,
+      rgba(40, 45, 50, 0.7) 100%
+    );
   border-radius: 3px;
-  border: 1px solid rgba(50, 50, 55, 0.4);
+  border: 1px solid rgba(0, 212, 170, 0.12);
+  box-shadow:
+    inset 0 0 10px rgba(0, 0, 0, 0.3),
+    0 0 8px rgba(0, 212, 170, 0.05);
 }
 
-// Ventilation slots
+// Ventilation slots with subtle cyan glow
 .vent-slots {
   display: flex;
   flex-direction: column;
@@ -987,13 +1077,15 @@ $cyber-red: #ff3333;
   span {
     width: 10px;
     height: 3px;
-    background: rgba(10, 10, 12, 0.8);
+    background: rgba(8, 12, 15, 0.85);
     border-radius: 1px;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.5),
+      0 0 3px rgba(0, 212, 170, 0.03);
   }
 }
 
-// Right: Guardian Section (30%)
+// Right: Guardian Section (30%) - transparent for matrix rain
 .guardian-section {
   flex: 3;
   min-width: 280px;
@@ -1002,16 +1094,20 @@ $cyber-red: #ff3333;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  // Transparent to show matrix rain behind
+  background: transparent;
 }
 
 .face-panel {
   height: 280px;
   flex-shrink: 0;
+  // Component has its own styling
 }
 
 .log-panel {
   flex: 1;
   min-height: 200px;
+  // Component has its own styling
 }
 
 // Server Detail Modal

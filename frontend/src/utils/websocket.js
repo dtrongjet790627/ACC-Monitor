@@ -62,6 +62,32 @@ class WebSocketService {
           this.emit('newLog', data)
         })
 
+        // Server recovery events
+        this.socket.on('server_recovered', (data) => {
+          console.log('[WS] Server recovered:', data.server_id)
+          this.emit('serverRecovered', data)
+        })
+
+        this.socket.on('server_offline', (data) => {
+          console.log('[WS] Server offline:', data.server_id)
+          this.emit('serverOffline', data)
+        })
+
+        this.socket.on('connection_state_change', (data) => {
+          console.log('[WS] Connection state change:', data.server_id, data.new_state)
+          this.emit('connectionStateChange', data)
+        })
+
+        // All servers status update (full refresh)
+        this.socket.on('all_servers_status', (data) => {
+          this.emit('allServersStatus', data)
+        })
+
+        // Server status update (for reconnection broadcasts)
+        this.socket.on('server_status_update', (data) => {
+          this.emit('serverStatusUpdate', data)
+        })
+
       } catch (error) {
         console.error('[WS] Failed to create socket:', error)
         reject(error)

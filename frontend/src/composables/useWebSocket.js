@@ -55,6 +55,38 @@ export function useWebSocket() {
         })
       })
     )
+
+    // 服务器恢复事件
+    unsubscribers.push(
+      wsService.on('serverRecovered', (data) => {
+        console.log('[WS] Server recovered:', data.serverId)
+        monitorStore.handleServerRecovered(data.serverId, data.offlineDuration)
+      })
+    )
+
+    // 服务器离线事件
+    unsubscribers.push(
+      wsService.on('serverOffline', (data) => {
+        console.log('[WS] Server offline:', data.serverId)
+        monitorStore.handleServerOffline(data.serverId)
+      })
+    )
+
+    // 服务器状态更新（用于重连后的状态刷新）
+    unsubscribers.push(
+      wsService.on('serverStatusUpdate', (data) => {
+        if (data.server) {
+          monitorStore.updateFullServerStatus(data.server)
+        }
+      })
+    )
+
+    // 连接状态变化
+    unsubscribers.push(
+      wsService.on('connectionStateChange', (data) => {
+        monitorStore.handleConnectionStateChange(data.serverId, data.newState, data.oldState)
+      })
+    )
   }
 
   function cleanupListeners() {

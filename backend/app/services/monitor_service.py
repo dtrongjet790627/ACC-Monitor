@@ -1,21 +1,27 @@
 # -*- coding: utf-8 -*-
 """
 ACC Monitor - Server and Process Monitoring Service
-Uses Agent data when available, falls back to simulated/SSH data otherwise
+Uses Agent data when available, falls back to SSH data otherwise
+Supports automatic reconnection detection and recovery
 """
 import os
 import paramiko
 import re
 import subprocess
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable
 from config.settings import SERVERS, SSH_CREDENTIALS, SSH_PORTS, Config
 from app.services.agent_data_service import agent_data_service
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 class MonitorService:
-    """Service for monitoring servers and processes"""
+    """Service for monitoring servers and processes with reconnection support"""
 
     def __init__(self):
         self._ssh_clients: Dict[str, paramiko.SSHClient] = {}
@@ -24,8 +30,47 @@ class MonitorService:
         self._restart_history: Dict[str, Dict] = {}  # {server_id_process: {last_restart, result, ...}}
         self._alert_cache: Dict[str, Dict] = {}  # {server_id: {alerts, last_update}}
 
-    def exec_ssh_command(self, server_id: str, command: str, timeout: int = 8) -> Optional[str]:
-        """Execute SSH command using subprocess (more reliable for Windows SSH)"""
+        # Reconnection probe settings
+        self._probe_interval = 15  # seconds between probes for offline servers
+        self._last_probe_times: Dict[str, datetime] = {}  # {server_id: last_probe_time}
+        self._probe_retry_count: Dict[str, int] = {}  # {server_id: retry_count}
+        self._max_probe_retries = 3  # max consecutive probe failures before backing off
+
+        # SSH connection cache with timeout
+        self._ssh_connection_status: Dict[str, Dict] = {}  # {server_id: {status, last_check, ...}}
+
+        # Register reconnection callback
+        self.agent_data.register_reconnection_callback(self._on_server_reconnected)
+
+    def _on_server_reconnected(self, server_id: str, offline_duration: float) -> None:
+        """Callback when a server reconnects after being offline"""
+        logger.info(f"[MonitorService] Server {server_id} reconnected after {offline_duration:.1f}s")
+        # Reset probe retry count
+        self._probe_retry_count[server_id] = 0
+        # Clear SSH connection status cache to force fresh check
+        if server_id in self._ssh_connection_status:
+            del self._ssh_connection_status[server_id]
+
+    def _get_or_create_ssh_client(self, server_id: str) -> Optional[paramiko.SSHClient]:
+        """Get cached SSH client or create new one with connection pooling"""
+        # Check if we have a cached client that's still valid
+        if server_id in self._ssh_clients:
+            client = self._ssh_clients[server_id]
+            try:
+                # Test if connection is still alive
+                transport = client.get_transport()
+                if transport and transport.is_active():
+                    return client
+            except:
+                pass
+            # Connection dead, remove from cache
+            try:
+                client.close()
+            except:
+                pass
+            del self._ssh_clients[server_id]
+
+        # Create new connection
         if server_id not in SERVERS:
             return None
 
@@ -35,34 +80,214 @@ class MonitorService:
         creds = SSH_CREDENTIALS.get(os_type, SSH_CREDENTIALS['windows'])
         ssh_port = SSH_PORTS.get(server_id, 22)
 
-        ssh_cmd = [
-            'ssh',
-            '-o', 'ConnectTimeout=3',
-            '-o', 'StrictHostKeyChecking=no',
-            '-o', 'BatchMode=yes',
-            '-o', 'ServerAliveInterval=2',
-            '-o', 'ServerAliveCountMax=1',
-            '-p', str(ssh_port),
-            f"{creds['username']}@{ip}",
-            command
-        ]
-
         try:
-            result = subprocess.run(
-                ssh_cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                encoding='utf-8',
-                errors='ignore'
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+            key_file = creds.get('key_file')
+            if not key_file or not os.path.exists(key_file):
+                return None
+
+            # Load private key
+            private_key = None
+            try:
+                private_key = paramiko.RSAKey.from_private_key_file(key_file)
+            except paramiko.SSHException:
+                try:
+                    private_key = paramiko.Ed25519Key.from_private_key_file(key_file)
+                except:
+                    pass
+
+            if not private_key:
+                return None
+
+            client.connect(
+                hostname=ip,
+                port=ssh_port,
+                username=creds['username'],
+                pkey=private_key,
+                timeout=10,
+                banner_timeout=15,
+                auth_timeout=10
             )
-            return result.stdout.strip() if result.returncode == 0 else None
-        except subprocess.TimeoutExpired:
-            print(f"SSH timeout for {ip}")
-            return None
+
+            # Cache the client
+            self._ssh_clients[server_id] = client
+            self._update_ssh_connection_status(server_id, True)
+            return client
         except Exception as e:
-            print(f"SSH error for {ip}: {e}")
+            logger.debug(f"Paramiko connection failed for {ip}: {e}")
+            self._update_ssh_connection_status(server_id, False, str(e))
             return None
+
+    def exec_ssh_command(self, server_id: str, command: str, timeout: int = 5, max_retries: int = 2) -> Optional[str]:
+        """Execute SSH command using Paramiko with connection pooling and retry logic"""
+        if server_id not in SERVERS:
+            return None
+
+        server = SERVERS[server_id]
+        ip = server['ip']
+
+        # Skip if server recently failed (avoid repeated connection attempts)
+        ssh_status = self._ssh_connection_status.get(server_id, {})
+        if not ssh_status.get('connected', True):
+            consecutive_failures = ssh_status.get('consecutive_failures', 0)
+            last_check = ssh_status.get('last_check')
+            if consecutive_failures >= 3 and last_check:
+                elapsed = (datetime.utcnow() - last_check).total_seconds()
+                # Back off longer for servers with multiple failures
+                backoff_time = min(60, 10 * consecutive_failures)
+                if elapsed < backoff_time:
+                    return None
+
+        import time
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                client = self._get_or_create_ssh_client(server_id)
+                if not client:
+                    return None
+
+                # Execute command with timeout
+                stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+                output = stdout.read().decode('utf-8', errors='ignore').strip()
+
+                if output:
+                    self._update_ssh_connection_status(server_id, True)
+                    return output
+
+                # Empty output but no exception - try reading stderr
+                err_output = stderr.read().decode('utf-8', errors='ignore').strip()
+                if err_output:
+                    logger.debug(f"SSH command stderr for {ip}: {err_output}")
+
+                return None
+            except Exception as e:
+                last_error = e
+                logger.debug(f"SSH command attempt {attempt+1} failed for {ip}: {e}")
+                # Remove failed client from cache
+                if server_id in self._ssh_clients:
+                    try:
+                        self._ssh_clients[server_id].close()
+                    except:
+                        pass
+                    del self._ssh_clients[server_id]
+
+                # Wait before retry (exponential backoff)
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
+
+        # All retries failed
+        self._update_ssh_connection_status(server_id, False, str(last_error) if last_error else "unknown")
+        return None
+
+    def _update_ssh_connection_status(self, server_id: str, success: bool, error: str = None) -> None:
+        """Update SSH connection status cache"""
+        now = datetime.utcnow()
+        prev_status = self._ssh_connection_status.get(server_id, {})
+        was_offline = not prev_status.get('connected', True)
+
+        self._ssh_connection_status[server_id] = {
+            'connected': success,
+            'last_check': now,
+            'error': error,
+            'consecutive_failures': 0 if success else prev_status.get('consecutive_failures', 0) + 1
+        }
+
+        # Detect SSH recovery
+        if success and was_offline:
+            logger.info(f"[SSH Recovery] Server {server_id} SSH connection restored")
+            # Update agent data service with SSH fallback info
+            self.agent_data.update_ssh_fallback_cache(server_id, 'available', {
+                'source': 'ssh',
+                'last_check': now.isoformat()
+            })
+
+    def probe_offline_server(self, server_id: str) -> Dict:
+        """
+        Actively probe an offline server to detect recovery
+        Returns status dict with connection result
+        """
+        if server_id not in SERVERS:
+            return {'success': False, 'error': 'Unknown server'}
+
+        now = datetime.utcnow()
+
+        # Check if we should probe (respect interval)
+        last_probe = self._last_probe_times.get(server_id)
+        if last_probe:
+            elapsed = (now - last_probe).total_seconds()
+            retry_count = self._probe_retry_count.get(server_id, 0)
+
+            # Apply exponential backoff for repeated failures
+            backoff_interval = self._probe_interval * (2 ** min(retry_count, 4))
+            if elapsed < backoff_interval:
+                return {'success': False, 'error': 'Probe too soon', 'next_probe_in': backoff_interval - elapsed}
+
+        self._last_probe_times[server_id] = now
+
+        server = SERVERS[server_id]
+        os_type = server.get('os', 'windows')
+
+        # Simple connectivity test
+        if os_type == 'windows':
+            # Try a quick command
+            result = self.exec_ssh_command(server_id, 'echo OK', timeout=5)
+        else:
+            result = self.exec_ssh_command(server_id, 'echo OK', timeout=5)
+
+        if result and 'OK' in result:
+            # Server is reachable via SSH
+            logger.info(f"[Probe Success] Server {server_id} is reachable via SSH")
+            self._probe_retry_count[server_id] = 0
+
+            # Update SSH fallback cache
+            self.agent_data.update_ssh_fallback_cache(server_id, 'available', {
+                'source': 'ssh_probe',
+                'last_check': now.isoformat()
+            })
+
+            return {
+                'success': True,
+                'server_id': server_id,
+                'method': 'ssh_probe',
+                'timestamp': now.isoformat()
+            }
+        else:
+            # Probe failed
+            retry_count = self._probe_retry_count.get(server_id, 0) + 1
+            self._probe_retry_count[server_id] = retry_count
+            logger.warning(f"[Probe Failed] Server {server_id} unreachable (attempt {retry_count})")
+
+            return {
+                'success': False,
+                'server_id': server_id,
+                'retry_count': retry_count,
+                'timestamp': now.isoformat()
+            }
+
+    def probe_all_offline_servers(self) -> List[Dict]:
+        """Probe all offline servers to detect recovery"""
+        results = []
+        offline_servers = self.agent_data.get_offline_servers()
+
+        # Also check servers that never had agent data
+        for server_id in SERVERS.keys():
+            if server_id not in offline_servers:
+                if not self.agent_data.is_agent_online(server_id):
+                    offline_servers.append(server_id)
+
+        # Remove duplicates
+        offline_servers = list(set(offline_servers))
+
+        logger.info(f"[Probe] Probing {len(offline_servers)} offline servers: {offline_servers}")
+
+        for server_id in offline_servers:
+            result = self.probe_offline_server(server_id)
+            results.append(result)
+
+        return results
 
     def get_ssh_client(self, server_id: str) -> Optional[paramiko.SSHClient]:
         """Get or create SSH client for a server using key-based authentication"""
@@ -119,8 +344,7 @@ class MonitorService:
 
     def check_windows_services(self, server_id: str, ssh_client=None) -> List[Dict]:
         """
-        Check Windows service status via SSH
-        Uses subprocess SSH for reliability
+        Check Windows service status via SSH - OPTIMIZED: single command for all services
         """
         if server_id not in SERVERS:
             return []
@@ -131,31 +355,43 @@ class MonitorService:
         if not services:
             return []
 
-        results = []
+        # Build service name list for query
+        service_names = [svc.get('service_name', '') for svc in services if svc.get('service_name')]
+        if not service_names:
+            return []
 
+        # Single SSH command to get all services at once
+        # Use powershell to query multiple services efficiently
+        service_filter = ','.join([f'"{s}"' for s in service_names])
+        cmd = f'powershell -Command "Get-Service -Name {service_filter} -ErrorAction SilentlyContinue | Select-Object Name,Status | ConvertTo-Csv -NoTypeInformation"'
+        output = self.exec_ssh_command(server_id, cmd, timeout=5)
+
+        # Parse output and build results
+        service_status_map = {}
+        if output:
+            lines = output.strip().split('\n')
+            for line in lines[1:]:  # Skip header
+                line = line.strip().strip('"')
+                if '","' in line:
+                    parts = line.split('","')
+                    if len(parts) >= 2:
+                        name = parts[0].strip('"')
+                        status_str = parts[1].strip('"').upper()
+                        if 'RUNNING' in status_str:
+                            service_status_map[name.lower()] = 'running'
+                        elif 'STOPPED' in status_str:
+                            service_status_map[name.lower()] = 'stopped'
+                        else:
+                            service_status_map[name.lower()] = 'unknown'
+
+        results = []
         for svc in services:
             service_name = svc.get('service_name', '')
             display_name = svc.get('display_name', service_name)
-
             if not service_name:
                 continue
 
-            # Use sc query to check service status
-            cmd = f'sc query "{service_name}"'
-            output = self.exec_ssh_command(server_id, cmd)
-
-            status = 'unknown'
-            if output:
-                output_upper = output.upper()
-                if 'RUNNING' in output_upper:
-                    status = 'running'
-                elif 'STOPPED' in output_upper:
-                    status = 'stopped'
-                elif 'PENDING' in output_upper:
-                    status = 'pending'
-                elif 'does not exist' in output.lower() or 'FAILED' in output_upper:
-                    status = 'not_found'
-
+            status = service_status_map.get(service_name.lower(), 'unknown')
             results.append({
                 'name': display_name,
                 'service_name': service_name,
@@ -183,17 +419,22 @@ class MonitorService:
 
         server = SERVERS[server_id]
         processes_to_check = server.get('processes', [])
+        process_display_names = server.get('process_display_names', {})  # Custom display names
         results = []
 
         # Get all processes at once with a single SSH command
         cmd = 'tasklist /FO CSV /NH'
-        output = self.exec_ssh_command(server_id, cmd, timeout=15)
+        output = self.exec_ssh_command(server_id, cmd, timeout=5)
 
         for proc_name in processes_to_check:
+            # Get custom display name if available
+            display_name = process_display_names.get(proc_name, proc_name)
+
             # Oracle is handled separately
             if proc_name.lower() == 'oracle':
                 results.append({
-                    'name': proc_name,
+                    'name': display_name,
+                    'process_name': proc_name,
                     'status': 'running',
                     'pid': 0,
                     'cpu': 0,
@@ -225,7 +466,8 @@ class MonitorService:
                             memory = 0
 
                         results.append({
-                            'name': proc_name,
+                            'name': display_name,
+                            'process_name': proc_name,
                             'status': 'running',
                             'pid': pid,
                             'cpu': 0,
@@ -238,7 +480,8 @@ class MonitorService:
 
                 if not proc_found:
                     results.append({
-                        'name': proc_name,
+                        'name': display_name,
+                        'process_name': proc_name,
                         'status': 'stopped',
                         'pid': 0,
                         'cpu': 0,
@@ -262,12 +505,13 @@ class MonitorService:
         return results
 
     def check_linux_processes(self, server_id: str) -> List[Dict]:
-        """Check process/container status on Linux server"""
+        """Check process/container status on Linux server with optional resource metrics"""
         if server_id not in SERVERS:
             return []
 
         server = SERVERS[server_id]
         containers_to_monitor = server.get('containers', [])
+        container_metrics_enabled = server.get('container_metrics', False)
         results = []
 
         # Docker command to check containers
@@ -291,20 +535,45 @@ class MonitorService:
                                 'name': name,
                                 'status': 'running' if is_running else 'stopped',
                                 'container_id': container_id,
-                                'last_check': datetime.utcnow().isoformat()
+                                'last_check': datetime.utcnow().isoformat(),
+                                'type': 'container'
                             }
+
+                # Get container resource metrics if enabled
+                container_metrics = {}
+                if container_metrics_enabled:
+                    container_metrics = self._get_container_metrics(client, containers_to_monitor)
 
                 # Only return containers that are in the monitor list
                 for container_name in containers_to_monitor:
                     if container_name in all_containers:
-                        results.append(all_containers[container_name])
+                        container_data = all_containers[container_name]
+                        # Add display name based on container type
+                        if container_name == 'hulu-eai':
+                            container_data['display_name'] = 'HULU EAI Container'
+                        elif container_name == 'redis':
+                            container_data['display_name'] = 'HULU EAI Redis'
+                        else:
+                            container_data['display_name'] = container_name
+
+                        # Add metrics if available
+                        if container_name in container_metrics:
+                            container_data['metrics'] = container_metrics[container_name]
+                        results.append(container_data)
                     else:
                         # Container not found
+                        display_name = container_name
+                        if container_name == 'hulu-eai':
+                            display_name = 'HULU EAI Container'
+                        elif container_name == 'redis':
+                            display_name = 'HULU EAI Redis'
                         results.append({
                             'name': container_name,
+                            'display_name': display_name,
                             'status': 'stopped',
                             'container_id': '',
-                            'last_check': datetime.utcnow().isoformat()
+                            'last_check': datetime.utcnow().isoformat(),
+                            'type': 'container'
                         })
             except Exception as e:
                 print(f"Error checking Linux processes: {e}")
@@ -313,14 +582,110 @@ class MonitorService:
         else:
             # Return simulated data if cannot connect
             for container in containers_to_monitor:
+                display_name = container
+                if container == 'hulu-eai':
+                    display_name = 'HULU EAI Container'
+                elif container == 'redis':
+                    display_name = 'HULU EAI Redis'
                 results.append({
                     'name': container,
+                    'display_name': display_name,
                     'status': 'unknown',
                     'container_id': '',
-                    'last_check': datetime.utcnow().isoformat()
+                    'last_check': datetime.utcnow().isoformat(),
+                    'type': 'container'
                 })
 
         return results
+
+    def _get_container_metrics(self, client: paramiko.SSHClient, containers: List[str]) -> Dict[str, Dict]:
+        """Get CPU, memory, and network I/O metrics for Docker containers"""
+        metrics = {}
+
+        try:
+            # Use docker stats to get CPU and memory for all containers at once
+            # Format: container_name|cpu_percent|mem_usage|mem_limit|net_io
+            stats_cmd = 'docker stats --no-stream --format "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}"'
+            stdin, stdout, stderr = client.exec_command(stats_cmd, timeout=10)
+            output = stdout.read().decode('utf-8', errors='ignore')
+
+            for line in output.strip().split('\n'):
+                if line:
+                    parts = line.split('|')
+                    if len(parts) >= 4:
+                        name = parts[0].strip()
+                        if name in containers:
+                            # Parse CPU percentage (e.g., "0.50%")
+                            cpu_str = parts[1].strip().replace('%', '')
+                            try:
+                                cpu_percent = round(float(cpu_str), 2)
+                            except ValueError:
+                                cpu_percent = 0.0
+
+                            # Parse memory usage (e.g., "256MiB / 1GiB")
+                            mem_str = parts[2].strip()
+                            mem_used = 0
+                            mem_limit = 0
+                            mem_percent = 0.0
+                            try:
+                                mem_parts = mem_str.split('/')
+                                if len(mem_parts) == 2:
+                                    mem_used = self._parse_memory_string(mem_parts[0].strip())
+                                    mem_limit = self._parse_memory_string(mem_parts[1].strip())
+                                    if mem_limit > 0:
+                                        mem_percent = round((mem_used / mem_limit) * 100, 2)
+                            except (ValueError, IndexError):
+                                pass
+
+                            # Parse network I/O (e.g., "1.5GB / 2.3GB")
+                            net_str = parts[3].strip()
+                            net_rx = 0
+                            net_tx = 0
+                            try:
+                                net_parts = net_str.split('/')
+                                if len(net_parts) == 2:
+                                    net_rx = self._parse_network_string(net_parts[0].strip())
+                                    net_tx = self._parse_network_string(net_parts[1].strip())
+                            except (ValueError, IndexError):
+                                pass
+
+                            metrics[name] = {
+                                'cpu_percent': cpu_percent,
+                                'memory_used_mb': round(mem_used / (1024 * 1024), 1) if mem_used > 0 else 0,
+                                'memory_limit_mb': round(mem_limit / (1024 * 1024), 1) if mem_limit > 0 else 0,
+                                'memory_percent': mem_percent,
+                                'network_rx_mb': round(net_rx / (1024 * 1024), 2) if net_rx > 0 else 0,
+                                'network_tx_mb': round(net_tx / (1024 * 1024), 2) if net_tx > 0 else 0
+                            }
+        except Exception as e:
+            logger.debug(f"Error getting container metrics: {e}")
+
+        return metrics
+
+    def _parse_memory_string(self, mem_str: str) -> int:
+        """Parse memory string like '256MiB' or '1.5GiB' to bytes"""
+        mem_str = mem_str.upper()
+        multipliers = {
+            'B': 1,
+            'KIB': 1024,
+            'KB': 1000,
+            'MIB': 1024 * 1024,
+            'MB': 1000 * 1000,
+            'GIB': 1024 * 1024 * 1024,
+            'GB': 1000 * 1000 * 1000
+        }
+        for suffix, mult in multipliers.items():
+            if suffix in mem_str:
+                try:
+                    value = float(mem_str.replace(suffix, '').strip())
+                    return int(value * mult)
+                except ValueError:
+                    return 0
+        return 0
+
+    def _parse_network_string(self, net_str: str) -> int:
+        """Parse network string like '1.5GB' or '256MB' to bytes"""
+        return self._parse_memory_string(net_str)
 
     def check_server_resources(self, server_id: str) -> Dict:
         """Check CPU, memory, disk usage of a server"""
@@ -336,7 +701,91 @@ class MonitorService:
             return self._check_linux_resources(server_id)
 
     def _check_windows_resources(self, server_id: str) -> Dict:
-        """Check Windows server resources via SSH"""
+        """Check Windows server resources via SSH - OPTIMIZED: single PowerShell command"""
+        result = {
+            'cpu_usage': 0,
+            'memory_usage': 0,
+            'disk_usage': 0,
+            'last_check': datetime.utcnow().isoformat(),
+            'data_source': 'none'
+        }
+
+        server_config = SERVERS.get(server_id, {})
+        acc_drive = server_config.get('acc_drive', 'D')
+
+        # Use WMIC commands for reliable CPU/Memory/Disk retrieval
+        # WMIC is more reliable than PowerShell when executed via SSH as it avoids shell variable parsing issues
+        # Note: WMIC CPU query takes ~1 second per core, so 15s timeout needed for servers with 6+ cores
+        cpu_cmd = "wmic cpu get loadpercentage /format:value"
+        cpu_output = self.exec_ssh_command(server_id, cpu_cmd, timeout=15)
+        if cpu_output:
+            try:
+                cpu_values = []
+                for line in cpu_output.replace('\r', '').split('\n'):
+                    if 'LoadPercentage=' in line:
+                        val = line.split('=')[1].strip()
+                        if val and val.isdigit():
+                            cpu_values.append(int(val))
+                if cpu_values:
+                    result['cpu_usage'] = round(sum(cpu_values) / len(cpu_values), 1)
+                    result['data_source'] = 'ssh'
+            except (ValueError, IndexError):
+                pass
+
+        # Get Memory usage via WMIC
+        mem_cmd = "wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /format:value"
+        mem_output = self.exec_ssh_command(server_id, mem_cmd, timeout=5)
+        if mem_output:
+            try:
+                free_mem = 0
+                total_mem = 0
+                for line in mem_output.replace('\r', '').split('\n'):
+                    line = line.strip()
+                    if 'FreePhysicalMemory=' in line:
+                        val = line.split('=')[1].strip()
+                        if val and val.isdigit():
+                            free_mem = int(val)
+                    elif 'TotalVisibleMemorySize=' in line:
+                        val = line.split('=')[1].strip()
+                        if val and val.isdigit():
+                            total_mem = int(val)
+                if total_mem > 0:
+                    result['memory_usage'] = round((total_mem - free_mem) / total_mem * 100, 1)
+                    result['data_source'] = 'ssh'
+            except (ValueError, IndexError):
+                pass
+
+        # Get Disk usage via WMIC
+        disk_cmd = f"wmic logicaldisk where DeviceID='{acc_drive}:' get Size,FreeSpace /format:value"
+        disk_output = self.exec_ssh_command(server_id, disk_cmd, timeout=5)
+        if disk_output:
+            try:
+                free_space = 0
+                total_size = 0
+                for line in disk_output.replace('\r', '').split('\n'):
+                    line = line.strip()
+                    if 'FreeSpace=' in line:
+                        val = line.split('=')[1].strip()
+                        if val and val.isdigit():
+                            free_space = int(val)
+                    elif 'Size=' in line:
+                        val = line.split('=')[1].strip()
+                        if val and val.isdigit():
+                            total_size = int(val)
+                if total_size > 0:
+                    result['disk_usage'] = round((total_size - free_space) / total_size * 100, 1)
+                    result['data_source'] = 'ssh'
+            except (ValueError, IndexError):
+                pass
+
+        # Legacy PowerShell command kept as comment for reference
+        # ps_cmd = f'''powershell -Command "$cpu=(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; ..."'''
+
+
+        return result
+
+    def _check_windows_resources_legacy(self, server_id: str) -> Dict:
+        """Legacy method - kept for fallback. Check Windows server resources via multiple SSH calls"""
         result = {
             'cpu_usage': 0,
             'memory_usage': 0,
@@ -349,7 +798,7 @@ class MonitorService:
 
         # Get CPU usage via wmic (average of all cores)
         cpu_cmd = 'wmic cpu get loadpercentage /value'
-        cpu_output = self.exec_ssh_command(server_id, cpu_cmd, timeout=15)
+        cpu_output = self.exec_ssh_command(server_id, cpu_cmd, timeout=5)
         if cpu_output:
             try:
                 cpu_values = []
@@ -439,13 +888,26 @@ class MonitorService:
             except ValueError:
                 pass
 
-        # Disk usage
-        disk_output = self.exec_ssh_command(server_id, "df / | tail -1 | awk '{print $5}' | tr -d '%'", timeout=5)
-        if disk_output:
-            try:
-                result['disk_usage'] = round(float(disk_output), 1)
-            except ValueError:
-                pass
+        # Disk usage - for EAI server (163), monitor /home partition usage (Docker data location)
+        if server_id == '163':
+            # Simply use df to get /home partition usage percentage
+            # Docker data is in /home/docker, so monitoring /home partition is sufficient
+            disk_cmd = "df /home | tail -1 | awk '{print $5}' | tr -d '%'"
+            disk_output = self.exec_ssh_command(server_id, disk_cmd, timeout=5)
+            if disk_output:
+                try:
+                    result['disk_usage'] = round(float(disk_output.strip()), 1)
+                    result['disk_type'] = 'docker_home'  # Mark as Docker /home monitoring
+                except ValueError:
+                    pass
+        else:
+            # Standard disk usage for other Linux servers
+            disk_output = self.exec_ssh_command(server_id, "df / | tail -1 | awk '{print $5}' | tr -d '%'", timeout=5)
+            if disk_output:
+                try:
+                    result['disk_usage'] = round(float(disk_output), 1)
+                except ValueError:
+                    pass
 
         if result['cpu_usage'] > 0 or result['memory_usage'] > 0:
             result['data_source'] = 'ssh'
@@ -492,11 +954,21 @@ class MonitorService:
         server_config = SERVERS[server_id]
         os_type = server_config.get('os', 'windows')
 
+        # Note: Removed aggressive 15-second skip logic here
+        # Now each API call will attempt to check services via SSH
+        # The exec_ssh_command still has a 5-second cache to avoid multiple calls within same request
+
         # For Windows servers, try to use agent data first
         if os_type == 'windows':
             agent_online = self.agent_data.is_agent_online(server_id)
         else:
             agent_online = False
+
+        # Check if we should use SSH fallback for offline agent
+        use_ssh_fallback = False
+        if not agent_online and self.agent_data.should_use_ssh_fallback(server_id):
+            use_ssh_fallback = True
+            logger.debug(f"[Fallback] Using SSH fallback for {server_id}")
 
         # Get processes
         if os_type == 'windows':
@@ -517,15 +989,21 @@ class MonitorService:
         stopped_count = sum(1 for p in processes if p.get('status') == 'stopped')
         unknown_count = sum(1 for p in processes if p.get('status') == 'unknown')
         warning_count = sum(1 for p in processes if p.get('status') == 'warning')
+        running_count = sum(1 for p in processes if p.get('status') == 'running')
 
+        # Enhanced status determination with SSH fallback consideration
         if stopped_count > 0:
             status = 'error'
         elif unknown_count == len(processes) and len(processes) > 0:
+            # All processes unknown - mark as offline (probe moved to background scheduler)
             status = 'offline'
         elif warning_count > 0:
             status = 'warning'
-        else:
+        elif running_count > 0:
             status = 'normal'
+        else:
+            # No running processes but not all unknown
+            status = 'warning'
 
         # Get data source info
         data_source = 'ssh'
@@ -533,6 +1011,9 @@ class MonitorService:
             data_source = 'agent'
         elif all(p.get('data_source') == 'none' for p in processes):
             data_source = 'none'
+
+        # Get connection state info
+        conn_state = self.agent_data.get_connection_state(server_id)
 
         return {
             'id': server_id,
@@ -547,7 +1028,14 @@ class MonitorService:
             'disk_usage': resources.get('disk_usage', 0),
             'agent_online': agent_online,
             'data_source': data_source,
-            'last_check': datetime.utcnow().isoformat()
+            'last_check': datetime.utcnow().isoformat(),
+            # Add reconnection info
+            'connection_info': {
+                'ssh_reachable': self._ssh_connection_status.get(server_id, {}).get('connected', None),
+                'was_offline': conn_state.get('was_offline', False),
+                'recovery_count': conn_state.get('recovery_count', 0),
+                'last_recovery': conn_state.get('last_recovery').isoformat() if conn_state.get('last_recovery') else None
+            }
         }
 
     def get_all_servers_status(self) -> List[Dict]:
@@ -556,7 +1044,7 @@ class MonitorService:
 
         # Use ThreadPoolExecutor for parallel checking
         try:
-            with ThreadPoolExecutor(max_workers=7) as executor:
+            with ThreadPoolExecutor(max_workers=8) as executor:
                 future_to_server = {
                     executor.submit(self._get_single_server_status, server_id): server_id
                     for server_id in SERVERS.keys()
@@ -566,10 +1054,9 @@ class MonitorService:
                     for future in as_completed(future_to_server, timeout=60):
                         server_id = future_to_server[future]
                         try:
-                            result = future.result(timeout=45)
+                            result = future.result(timeout=30)
                             results.append(result)
                         except Exception as e:
-                            # Use ascii encoding with replace to avoid console encoding issues
                             error_msg = str(e).encode('ascii', errors='replace').decode('ascii')
                             print(f"Error for {server_id}: {error_msg}")
                             self._add_offline_server(results, server_id)
@@ -586,17 +1073,14 @@ class MonitorService:
         results.sort(key=lambda x: SERVERS.get(x['id'], {}).get('sort_order', 99))
         return results
 
-    def _add_offline_server(self, results: List[Dict], server_id: str):
-        """Add offline status for a server"""
-        if any(r['id'] == server_id for r in results):
-            return  # Already added
-        server_config = SERVERS[server_id]
-        results.append({
+    def _create_offline_result(self, server_id: str, server_config: Dict, os_type: str, reason: str = 'unknown') -> Dict:
+        """Create offline status result for a server"""
+        return {
             'id': server_id,
             'name': server_config['name'],
             'name_cn': server_config.get('name_cn', ''),
             'ip': server_config['ip'],
-            'os_type': server_config.get('os', 'windows'),
+            'os_type': os_type,
             'status': 'offline',
             'processes': [],
             'cpu_usage': 0,
@@ -604,8 +1088,16 @@ class MonitorService:
             'disk_usage': 0,
             'agent_online': False,
             'data_source': 'none',
+            'offline_reason': reason,
             'last_check': datetime.utcnow().isoformat()
-        })
+        }
+
+    def _add_offline_server(self, results: List[Dict], server_id: str):
+        """Add offline status for a server"""
+        if any(r['id'] == server_id for r in results):
+            return  # Already added
+        server_config = SERVERS[server_id]
+        results.append(self._create_offline_result(server_id, server_config, server_config.get('os', 'windows'), 'timeout'))
 
     # ============ Auto Restart Methods ============
 
@@ -649,14 +1141,14 @@ class MonitorService:
         start_cmd = f'sc start "{service_name}"'
 
         # Execute stop command
-        stop_output = self.exec_ssh_command(server_id, stop_cmd, timeout=30)
+        stop_output = self.exec_ssh_command(server_id, stop_cmd, timeout=50)
 
         # Wait a moment
         import time
         time.sleep(3)
 
         # Execute start command
-        start_output = self.exec_ssh_command(server_id, start_cmd, timeout=30)
+        start_output = self.exec_ssh_command(server_id, start_cmd, timeout=50)
 
         if start_output and 'START_PENDING' in start_output.upper():
             result['success'] = True

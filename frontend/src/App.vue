@@ -94,6 +94,8 @@ onUnmounted(() => {
 .main-content {
   position: relative;
   z-index: 10;
+  // Allow matrix rain to show through transparent areas
+  pointer-events: auto;
 }
 
 // 鼠标跟随光晕 - 荧光绿

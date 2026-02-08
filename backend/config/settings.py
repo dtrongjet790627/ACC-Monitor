@@ -38,6 +38,12 @@ class Config:
     AUTO_RESTART_ENABLED = True
     RESTART_COOLDOWN_SECONDS = 300  # 5 minutes between restarts
 
+    # Reconnection detection settings
+    AGENT_OFFLINE_TIMEOUT = 30  # seconds before agent considered offline
+    OFFLINE_PROBE_INTERVAL = 15  # seconds between offline server probes
+    PROBE_RETRY_BACKOFF = True  # enable exponential backoff for probe failures
+    MAX_PROBE_BACKOFF = 240  # max backoff interval in seconds (4 minutes)
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""
@@ -64,7 +70,8 @@ SERVERS = {
             {'service_name': 'ACC.Server', 'display_name': 'ACC.Server'},
             {'service_name': 'ACC.MQ', 'display_name': 'ACC.MQ'},
             {'service_name': 'ACC.PackServer', 'display_name': 'Pack.Server'},
-            {'service_name': 'ACC.LogReader', 'display_name': 'ACC.LogReader'}
+            {'service_name': 'ACC.LogReader', 'display_name': 'ACC.LogReader'},
+            {'service_name': 'HULU.EAI.Kingdee.Gateway', 'display_name': 'HULU EAI Kingdee Gateway'}
         ],
         'has_oracle': True,
         'sort_order': 1
@@ -97,7 +104,8 @@ SERVERS = {
             {'service_name': 'ACC.Server', 'display_name': 'ACC.Server'},
             {'service_name': 'ACC.MQ', 'display_name': 'ACC.MQ'},
             {'service_name': 'ACC.PackServer', 'display_name': 'Pack.Server'},
-            {'service_name': 'ACC.LogReader', 'display_name': 'LogReader'}
+            {'service_name': 'ACC.LogReader', 'display_name': 'LogReader'},
+            {'service_name': 'HULU.EAI.Kingdee.Gateway', 'display_name': 'HULU EAI Kingdee Gateway'}
         ],
         'has_oracle': True,
         'sort_order': 3
@@ -156,7 +164,13 @@ SERVERS = {
         'ip': '172.17.10.163',
         'os': 'linux',
         'log_path': '/var/eai/logs',
-        'containers': ['hulu-eai'],  # 仅监控EAI容器
+        'containers': ['hulu-eai', 'redis'],  # EAI容器和Redis服务
+        'container_metrics': True,  # 启用容器资源监测
+        'monitored_metrics': [
+            {'container': 'hulu-eai', 'metric': 'cpu', 'display_name': 'HULU EAI Container CPU'},
+            {'container': 'hulu-eai', 'metric': 'memory', 'display_name': 'HULU EAI Container Memory'},
+            {'container': 'hulu-eai', 'metric': 'network', 'display_name': 'HULU EAI Container Network I/O'}
+        ],
         'has_oracle': False,
         'sort_order': 7
     },

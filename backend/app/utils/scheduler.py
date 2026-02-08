@@ -1,15 +1,21 @@
 # -*- coding: utf-8 -*-
 """
 ACC Monitor - Background Task Scheduler
+Includes offline server probing for reconnection detection
 """
+import logging
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from config.settings import Config, SERVERS
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 class MonitorScheduler:
-    """Background task scheduler for monitoring"""
+    """Background task scheduler for monitoring with reconnection support"""
 
     def __init__(self, app=None):
         self.scheduler = BackgroundScheduler()
@@ -44,6 +50,15 @@ class MonitorScheduler:
             trigger=IntervalTrigger(seconds=Config.LOG_SCAN_INTERVAL),
             id='scan_logs',
             name='Scan logs for alerts',
+            replace_existing=True
+        )
+
+        # Add offline server probe job - runs more frequently to detect recovery faster
+        self.scheduler.add_job(
+            func=self._probe_offline_servers,
+            trigger=IntervalTrigger(seconds=15),  # Probe every 15 seconds
+            id='probe_offline_servers',
+            name='Probe offline servers for recovery',
             replace_existing=True
         )
 
@@ -194,6 +209,60 @@ class MonitorScheduler:
                         db.session.add(alert)
 
                 db.session.commit()
+
+    def _probe_offline_servers(self):
+        """
+        Probe offline servers to detect recovery
+        This runs more frequently than process checks to enable faster recovery detection
+        """
+        with self.app.app_context():
+            from app.services.monitor_service import MonitorService
+            from app.services.agent_data_service import agent_data_service
+            from app.api.websocket import broadcast_server_status
+
+            monitor_service = MonitorService()
+
+            # Get list of offline servers
+            offline_servers = []
+            for server_id in SERVERS.keys():
+                if not agent_data_service.is_agent_online(server_id):
+                    offline_servers.append(server_id)
+
+            if not offline_servers:
+                return  # No offline servers to probe
+
+            logger.info(f"[Scheduler] Probing {len(offline_servers)} offline servers")
+
+            # Probe each offline server
+            for server_id in offline_servers:
+                try:
+                    result = monitor_service.probe_offline_server(server_id)
+
+                    if result.get('success'):
+                        # Server recovered! Get fresh status and broadcast
+                        logger.info(f"[Scheduler] Server {server_id} recovered - fetching fresh status")
+
+                        server_config = SERVERS[server_id]
+                        status = monitor_service._get_single_server_status(server_id)
+
+                        # Broadcast updated status to all clients
+                        broadcast_server_status(status)
+
+                        # Log recovery event
+                        from app.models import Alert
+                        from app import db
+
+                        alert = Alert(
+                            server_id=server_id,
+                            level='info',
+                            source='monitor',
+                            message=f"Server {server_config['name']} connection recovered"
+                        )
+                        db.session.add(alert)
+                        db.session.commit()
+
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error probing {server_id}: {e}")
 
 
 # Global scheduler instance

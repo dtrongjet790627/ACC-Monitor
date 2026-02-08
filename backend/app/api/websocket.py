@@ -165,3 +165,30 @@ def broadcast_log_alert(server_id, level, message):
         'message': message,
         'timestamp': datetime.utcnow().isoformat()
     }, room='alerts')
+
+
+def broadcast_server_recovered(server_id, offline_duration):
+    """Broadcast server recovery event"""
+    socketio.emit('server_recovered', {
+        'server_id': server_id,
+        'offline_duration': offline_duration,
+        'timestamp': datetime.utcnow().isoformat()
+    }, room='status')
+
+
+def broadcast_server_offline(server_id):
+    """Broadcast server offline event"""
+    socketio.emit('server_offline', {
+        'server_id': server_id,
+        'timestamp': datetime.utcnow().isoformat()
+    }, room='status')
+
+
+def broadcast_connection_state_change(server_id, new_state, old_state):
+    """Broadcast connection state change (online/offline/warning)"""
+    socketio.emit('connection_state_change', {
+        'server_id': server_id,
+        'new_state': new_state,
+        'old_state': old_state,
+        'timestamp': datetime.utcnow().isoformat()
+    }, room='status')

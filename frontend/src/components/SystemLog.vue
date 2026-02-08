@@ -135,19 +135,21 @@ $void-800: #12121a;
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: rgba(10, 10, 15, 0.8);
+  // Semi-transparent background for matrix rain visibility
+  background: rgba(10, 10, 15, 0.70);
   border: 1px solid rgba($cyber-cyan, 0.4);
   border-radius: 8px;
   font-family: $font-mono;
   overflow: hidden;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 
   // Multi-layer neon glow - matching card style
   box-shadow:
     0 0 5px rgba($cyber-cyan, 0.2),
     0 0 10px rgba($cyber-cyan, 0.1),
     0 4px 20px rgba(0, 0, 0, 0.5),
-    inset 0 0 30px rgba(0, 0, 0, 0.3);
+    inset 0 0 30px rgba(0, 0, 0, 0.2);
 }
 
 // Corner Decorations - Cyberpunk Style

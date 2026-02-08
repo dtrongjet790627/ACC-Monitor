@@ -47,9 +47,13 @@ defineProps({
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(0, 10, 20, 0.85) 0%, rgba(0, 5, 15, 0.9) 100%);
+  // Semi-transparent background for matrix rain visibility
+  background: linear-gradient(180deg, rgba(0, 10, 20, 0.70) 0%, rgba(0, 5, 15, 0.75) 100%);
   border: 1px solid rgba(0, 212, 170, 0.3);
+  border-radius: 8px;
   overflow: hidden;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 // Corner decorations - matching server card style
