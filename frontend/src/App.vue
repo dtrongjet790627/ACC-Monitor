@@ -6,6 +6,13 @@
     <!-- 扫描线效果 -->
     <div class="scanlines"></div>
 
+    <!-- JS驱动的全局偶发扫描线 -->
+    <div
+      class="global-scanline"
+      :class="{ active: globalScanActive, 'scan-reverse': globalScanReverse }"
+      :style="globalScanStyle"
+    ></div>
+
     <!-- Glitch 故障层 -->
     <div class="glitch-overlay"></div>
 
@@ -35,9 +42,42 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import BackgroundEffects from '@/components/BackgroundEffects.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
+
+// ========================================
+// JS-driven global sporadic scanline
+// Appears every 15-30 seconds, sweeps full screen in 0.5-1s
+// ========================================
+const globalScanActive = ref(false)
+const globalScanReverse = ref(false)
+const globalScanDuration = ref(0.7)
+let globalScanTimer = null
+let globalScanEndTimer = null
+
+const globalScanStyle = computed(() => ({
+  '--scan-duration': globalScanDuration.value + 's'
+}))
+
+function scheduleGlobalScan() {
+  // Random interval: 15-30 seconds between scans
+  const delay = 15000 + Math.random() * 15000
+  globalScanTimer = setTimeout(() => {
+    // Randomly choose direction: top-to-bottom or bottom-to-top
+    globalScanReverse.value = Math.random() > 0.5
+    // Duration: 0.5-1 second
+    globalScanDuration.value = 0.5 + Math.random() * 0.5
+    globalScanActive.value = true
+
+    // End the scan after duration
+    const durationMs = globalScanDuration.value * 1000
+    globalScanEndTimer = setTimeout(() => {
+      globalScanActive.value = false
+      scheduleGlobalScan() // Schedule next
+    }, durationMs + 50) // Small buffer to ensure animation completes
+  }, delay)
+}
 
 const mouseX = ref(0)
 const mouseY = ref(0)
@@ -71,10 +111,19 @@ if (typeof window !== 'undefined') {
   window.addEventListener('mousemove', handleMouseMove, { passive: true })
 }
 
+// Start global sporadic scanline on mount
+onMounted(() => {
+  // Initial delay 5-15s so it doesn't fire immediately on load
+  const initialDelay = 5000 + Math.random() * 10000
+  globalScanTimer = setTimeout(() => scheduleGlobalScan(), initialDelay)
+})
+
 onUnmounted(() => {
   if (rafId) {
     cancelAnimationFrame(rafId)
   }
+  if (globalScanTimer) clearTimeout(globalScanTimer)
+  if (globalScanEndTimer) clearTimeout(globalScanEndTimer)
   if (typeof window !== 'undefined') {
     window.removeEventListener('mousemove', handleMouseMove)
   }
@@ -85,7 +134,7 @@ onUnmounted(() => {
 @import '@/styles/variables.scss';
 
 .app-container {
-  min-height: 100vh;
+  height: 100vh;
   position: relative;
   overflow: hidden;
   background: $bg-abyss;
@@ -112,12 +161,11 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: 5;
   transform: translate(-50%, -50%);
-  mix-blend-mode: screen;
   will-change: left, top;
   transition: left 0.05s linear, top 0.05s linear;
 }
 
-// 扫描线效果
+// 扫描线效果 - 极淡的静态CRT纹理，无移动扫描线
 .scanlines {
   position: fixed;
   top: 0;
@@ -126,37 +174,83 @@ onUnmounted(() => {
   height: 100%;
   pointer-events: none;
   z-index: 1000;
+  // 极淡的静态水平纹理，仅作CRT氛围
   background: repeating-linear-gradient(
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 4px
+    rgba(0, 0, 0, 0.015) 2px,
+    rgba(0, 0, 0, 0.015) 4px
   );
+  // 无移动扫描线 - 移除::before，扫描线效果由各卡片JS独立控制
+}
 
-  // 扫描线移动
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 4px;
-    background: linear-gradient(90deg,
-      transparent,
-      rgba($neon-green, 0.4),
-      rgba($neon-green, 0.6),
-      rgba($neon-green, 0.4),
-      transparent
-    );
-    animation: scanMove 5s linear infinite;
-    will-change: transform;
+// JS-driven global sporadic scanline
+.global-scanline {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  pointer-events: none;
+  z-index: 1002;
+  opacity: 0;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(0, 255, 160, 0.08) 15%,
+    rgba(0, 255, 160, 0.35) 40%,
+    rgba(0, 255, 160, 0.6) 50%,
+    rgba(0, 255, 160, 0.35) 60%,
+    rgba(0, 255, 160, 0.08) 85%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 20px rgba(0, 255, 160, 0.3),
+    0 0 60px rgba(0, 255, 160, 0.1);
+  will-change: transform, opacity;
+
+  &.active {
+    opacity: 1;
+    animation: globalScanDown var(--scan-duration, 0.7s) linear forwards;
+  }
+
+  &.active.scan-reverse {
+    animation: globalScanUp var(--scan-duration, 0.7s) linear forwards;
   }
 }
 
-@keyframes scanMove {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(100vh); }
+@keyframes globalScanDown {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
+@keyframes globalScanUp {
+  0% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0;
+  }
 }
 
 // Glitch故障效果层
@@ -178,6 +272,7 @@ onUnmounted(() => {
     width: 100%;
     height: 100%;
     opacity: 0;
+    will-change: transform, opacity;
   }
 
   &::before {

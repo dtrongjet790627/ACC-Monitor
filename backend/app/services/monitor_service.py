@@ -426,22 +426,33 @@ class MonitorService:
         cmd = 'tasklist /FO CSV /NH'
         output = self.exec_ssh_command(server_id, cmd, timeout=5)
 
+        # Determine if server is reachable (Agent online OR SSH output available)
+        server_reachable = (self.agent_data.is_agent_online(server_id)) or (output is not None)
+
         for proc_name in processes_to_check:
             # Get custom display name if available
             display_name = process_display_names.get(proc_name, proc_name)
 
             # Oracle is handled separately
             if proc_name.lower() == 'oracle':
+                # When server is unreachable (no Agent + no SSH), Oracle status should be unknown
+                # because we cannot verify the Oracle process is actually running on that server
+                if server_reachable:
+                    oracle_status = 'running'
+                    oracle_data_source = 'db'
+                else:
+                    oracle_status = 'unknown'
+                    oracle_data_source = 'none'
                 results.append({
                     'name': display_name,
                     'process_name': proc_name,
-                    'status': 'running',
+                    'status': oracle_status,
                     'pid': 0,
                     'cpu': 0,
                     'memory': 0,
                     'type': 'process',
                     'last_check': datetime.utcnow().isoformat(),
-                    'data_source': 'db'
+                    'data_source': oracle_data_source
                 })
                 continue
 

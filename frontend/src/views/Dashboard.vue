@@ -48,6 +48,12 @@
           <span class="ping-label">AVG PING</span>
           <span class="ping-value">{{ avgPing }}ms</span>
         </div>
+        <button class="admin-entry-btn" @click="goToAdmin" title="Admin Console">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -100,7 +106,7 @@
 
         <!-- System Log -->
         <div class="log-panel">
-          <SystemLog :logs="systemLogs" :max-entries="8" />
+          <SystemLog :logs="systemLogs" :max-entries="25" />
         </div>
       </div>
     </div>
@@ -170,14 +176,25 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMonitorStore } from '@/stores/monitor'
+import { useWebSocket } from '@/composables/useWebSocket'
 import ServerCardCompact from '@/components/ServerCardCompact.vue'
 import PixelFace from '@/components/PixelFace.vue'
 import SystemLog from '@/components/SystemLog.vue'
 import CyberModal from '@/components/CyberModal.vue'
 import AlertModal from '@/components/AlertModal.vue'
 
+const router = useRouter()
 const monitorStore = useMonitorStore()
+
+// Navigate to admin
+function goToAdmin() {
+  router.push('/admin')
+}
+
+// Initialize WebSocket connection
+const { isConnected: wsIsConnected } = useWebSocket()
 
 // Alert modal state
 const showAlertModal = ref(false)
@@ -223,14 +240,9 @@ const avgPing = computed(() => {
   return Math.round(total / servers.length)
 })
 
-// System logs
+// System logs - use real logs from store only, no fake data fallback
 const systemLogs = computed(() => {
-  const alerts = monitorStore.alerts || []
-  return alerts.slice(0, 8).map(alert => ({
-    time: new Date(alert.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-    level: alert.level === 'error' ? 'critical' : alert.level,
-    message: `${alert.serverName}: ${alert.message}`
-  }))
+  return monitorStore.systemLogs || []
 })
 
 // Server detail modal
@@ -318,11 +330,6 @@ onMounted(() => {
 
   // Start CRT interference effect
   startInterferenceEffect()
-
-  // Simulate connection
-  setTimeout(() => {
-    monitorStore.wsConnected = true
-  }, 1500)
 })
 
 onUnmounted(() => {
@@ -345,10 +352,11 @@ $cyber-red: #ff3333;
 .dashboard-container {
   position: relative;
   z-index: 10;
-  min-height: 100vh;
+  height: 100vh;
   padding: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   // Transparent background to show matrix rain
   background: transparent;
 }
@@ -359,10 +367,8 @@ $cyber-red: #ff3333;
   justify-content: space-between;
   align-items: center;
   padding: 16px 32px;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border-bottom: 2px solid rgba($cyber-cyan, 0.4);
+  background: rgba(0, 0, 0, 0.85);
+  border-bottom: 2px solid rgba($cyber-cyan, 0.45);
   font-family: $font-mono;
   flex-shrink: 0;
   position: relative;
@@ -566,6 +572,42 @@ $cyber-red: #ff3333;
   }
 }
 
+// Admin entry button (gear icon)
+.admin-entry-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba($cyber-cyan, 0.3);
+  border-radius: 4px;
+  background: rgba($cyber-cyan, 0.06);
+  color: rgba($cyber-cyan, 0.6);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-left: 8px;
+
+  &:hover {
+    color: $cyber-cyan;
+    border-color: $cyber-cyan;
+    background: rgba($cyber-cyan, 0.15);
+    box-shadow: 0 0 15px rgba($cyber-cyan, 0.3);
+
+    svg {
+      animation: gear-spin 2s linear infinite;
+    }
+  }
+
+  svg {
+    transition: transform 0.3s ease;
+  }
+}
+
+@keyframes gear-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 // Main Content - transparent for matrix rain visibility
 .main-content {
   flex: 1;
@@ -579,6 +621,7 @@ $cyber-red: #ff3333;
 }
 
 // Left: Servers Section (70%) - Real Server Rack Cabinet with Tech Style
+// Enhanced transparency for matrix rain visibility
 .servers-section {
   flex: 7;
   min-width: 0;
@@ -586,55 +629,55 @@ $cyber-red: #ff3333;
   overflow: visible;
   margin: 8px 0;
 
-  // Server Rack Cabinet Frame - Semi-transparent with tech style
+  // Server Rack Cabinet Frame - More transparent for matrix rain
   background:
     // Brushed metal texture overlay
     repeating-linear-gradient(
       90deg,
       transparent 0px,
       transparent 1px,
-      rgba(255, 255, 255, 0.01) 1px,
-      rgba(255, 255, 255, 0.01) 2px
+      rgba(255, 255, 255, 0.008) 1px,
+      rgba(255, 255, 255, 0.008) 2px
     ),
     // Horizontal scan lines
     repeating-linear-gradient(
       0deg,
       transparent 0px,
       transparent 3px,
-      rgba(0, 212, 170, 0.015) 3px,
-      rgba(0, 212, 170, 0.015) 4px
+      rgba(0, 212, 170, 0.012) 3px,
+      rgba(0, 212, 170, 0.012) 4px
     ),
     // Circuit board pattern
-    radial-gradient(circle at 10% 20%, rgba(0, 212, 170, 0.03) 0%, transparent 20%),
-    radial-gradient(circle at 90% 80%, rgba(0, 212, 170, 0.03) 0%, transparent 20%),
-    radial-gradient(circle at 50% 50%, rgba(0, 212, 170, 0.02) 0%, transparent 40%),
-    // Main gradient with transparency for matrix rain
+    radial-gradient(circle at 10% 20%, rgba(0, 212, 170, 0.025) 0%, transparent 20%),
+    radial-gradient(circle at 90% 80%, rgba(0, 212, 170, 0.025) 0%, transparent 20%),
+    radial-gradient(circle at 50% 50%, rgba(0, 212, 170, 0.015) 0%, transparent 40%),
+    // Main gradient - more transparent for matrix rain visibility
     linear-gradient(180deg,
-      rgba(20, 20, 24, 0.85) 0%,
-      rgba(14, 14, 18, 0.80) 50%,
-      rgba(10, 10, 14, 0.85) 100%
+      rgba(15, 18, 22, 0.88) 0%,
+      rgba(10, 12, 16, 0.85) 50%,
+      rgba(8, 10, 14, 0.88) 100%
     );
   border-radius: 8px;
 
   // Glowing border for tech style
-  border: 1px solid rgba($cyber-cyan, 0.25);
+  border: 1px solid rgba($cyber-cyan, 0.3);
 
   // Enhanced shadow with cyan glow
   box-shadow:
     // Outer cabinet frame with metal look
-    0 0 0 2px rgba(40, 40, 45, 0.9),
-    0 0 0 4px rgba(25, 25, 30, 0.95),
-    // Cyan glow edge
-    0 0 20px rgba($cyber-cyan, 0.1),
-    0 0 40px rgba($cyber-cyan, 0.05),
+    0 0 0 2px rgba(40, 40, 45, 0.7),
+    0 0 0 4px rgba(25, 25, 30, 0.75),
+    // Cyan glow edge - enhanced
+    0 0 25px rgba($cyber-cyan, 0.15),
+    0 0 50px rgba($cyber-cyan, 0.08),
     // 3D depth shadow
-    0 8px 32px rgba(0, 0, 0, 0.6),
-    0 16px 48px rgba(0, 0, 0, 0.4),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 16px 48px rgba(0, 0, 0, 0.35),
     // Inner depth with subtle glow
-    inset 0 0 60px rgba(0, 0, 0, 0.4),
-    inset 0 0 30px rgba(0, 212, 170, 0.04),
+    inset 0 0 60px rgba(0, 0, 0, 0.3),
+    inset 0 0 30px rgba(0, 212, 170, 0.05),
     // Inner edge highlight
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 // Rack Cabinet Top Panel (with ventilation grilles and tech style)
@@ -884,6 +927,7 @@ $cyber-red: #ff3333;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
+  opacity: 0.7;
   background:
     // Brushed metal texture
     repeating-linear-gradient(
@@ -944,6 +988,7 @@ $cyber-red: #ff3333;
   align-items: center;
   gap: 12px;
   padding: 12px 0;
+  opacity: 0.65;
   background:
     // Brushed metal vertical
     repeating-linear-gradient(
@@ -1008,6 +1053,7 @@ $cyber-red: #ff3333;
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  opacity: 0.6;
   background: linear-gradient(135deg,
     rgba(70, 75, 80, 0.95) 0%,
     rgba(55, 60, 65, 0.95) 30%,
@@ -1046,6 +1092,7 @@ $cyber-red: #ff3333;
   align-items: center;
   gap: 12px;
   padding: 12px 0;
+  opacity: 0.65;
   background:
     // Brushed metal vertical
     repeating-linear-gradient(
@@ -1094,6 +1141,8 @@ $cyber-red: #ff3333;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow: hidden;
+  min-height: 0;
   // Transparent to show matrix rain behind
   background: transparent;
 }
@@ -1106,7 +1155,8 @@ $cyber-red: #ff3333;
 
 .log-panel {
   flex: 1;
-  min-height: 200px;
+  min-height: 0;
+  overflow: hidden;
   // Component has its own styling
 }
 

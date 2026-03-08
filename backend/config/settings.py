@@ -3,10 +3,53 @@
 ACC Monitor - Configuration Settings
 """
 import os
+import json
 from datetime import timedelta
 
 # Base directory
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# JSON config file path
+SERVERS_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'servers.json')
+
+
+def load_servers_from_json():
+    """Load server configurations from JSON file"""
+    try:
+        with open(SERVERS_JSON_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('servers', {}), data.get('oracle_configs', {})
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"[Warning] Failed to load servers.json: {e}, using defaults")
+        return {}, {}
+
+
+def save_servers_to_json(servers, oracle_configs=None):
+    """Save server configurations to JSON file"""
+    try:
+        # Load existing data to preserve oracle_configs if not provided
+        existing_data = {}
+        if os.path.exists(SERVERS_JSON_PATH):
+            with open(SERVERS_JSON_PATH, 'r', encoding='utf-8') as f:
+                existing_data = json.load(f)
+
+        data = {
+            'servers': servers,
+            'oracle_configs': oracle_configs if oracle_configs is not None else existing_data.get('oracle_configs', {})
+        }
+        with open(SERVERS_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[Error] Failed to save servers.json: {e}")
+        return False
+
+
+def reload_servers():
+    """Reload SERVERS and ORACLE_CONFIGS from JSON file"""
+    global SERVERS, ORACLE_CONFIGS
+    SERVERS, ORACLE_CONFIGS = load_servers_from_json()
+    return SERVERS, ORACLE_CONFIGS
 
 
 class Config:
@@ -55,192 +98,9 @@ class ProductionConfig(Config):
     DEBUG = False
 
 
-# Server configurations
+# Server configurations - loaded from JSON file
 # 排序顺序: 153、164、168、193、194、160、163、165
-SERVERS = {
-    '153': {
-        'name': 'DP EPS Production',
-        'name_cn': 'DP_EPS',
-        'ip': '172.17.10.153',
-        'os': 'windows',
-        'acc_drive': 'E',  # 实际部署在E盘
-        'log_path': 'E:\\iPlant.ACC\\Log',
-        'processes': ['Oracle'],
-        'services': [  # NSSM管理的服务
-            {'service_name': 'ACC.Server', 'display_name': 'ACC.Server'},
-            {'service_name': 'ACC.MQ', 'display_name': 'ACC.MQ'},
-            {'service_name': 'ACC.PackServer', 'display_name': 'Pack.Server'},
-            {'service_name': 'ACC.LogReader', 'display_name': 'ACC.LogReader'},
-            {'service_name': 'HULU.EAI.Kingdee.Gateway', 'display_name': 'HULU EAI Kingdee Gateway'}
-        ],
-        'has_oracle': True,
-        'sort_order': 1
-    },
-    '164': {
-        'name': 'DP EPP Production',
-        'name_cn': 'DP EPP',
-        'ip': '172.17.10.164',
-        'os': 'windows',
-        'acc_drive': 'E',  # ACC部署盘符
-        'log_path': 'E:\\ACC\\Log',
-        'processes': ['Oracle'],  # 仅Oracle保留进程监控
-        'services': [  # NSSM管理的服务
-            {'service_name': 'ACC.Server', 'display_name': 'ACC.Server'},
-            {'service_name': 'ACC.PackServer', 'display_name': 'Pack.Server'},
-            {'service_name': 'ACC.MQ', 'display_name': 'ACC.MQ'}
-        ],
-        'has_oracle': True,
-        'sort_order': 2
-    },
-    '168': {
-        'name': 'SMT Line2 Production',
-        'name_cn': 'SMT Line2',
-        'ip': '172.17.10.168',
-        'os': 'windows',
-        'acc_drive': 'D',  # ACC部署盘符
-        'log_path': 'D:\\ACC\\Log',
-        'processes': ['Oracle'],
-        'services': [  # NSSM管理的服务
-            {'service_name': 'ACC.Server', 'display_name': 'ACC.Server'},
-            {'service_name': 'ACC.MQ', 'display_name': 'ACC.MQ'},
-            {'service_name': 'ACC.PackServer', 'display_name': 'Pack.Server'},
-            {'service_name': 'ACC.LogReader', 'display_name': 'LogReader'},
-            {'service_name': 'HULU.EAI.Kingdee.Gateway', 'display_name': 'HULU EAI Kingdee Gateway'}
-        ],
-        'has_oracle': True,
-        'sort_order': 3
-    },
-    '193': {
-        'name': 'C EPS Production',
-        'name_cn': 'C_EPS',
-        'ip': '172.17.10.193',
-        'os': 'windows',
-        'acc_drive': 'E',  # ACC部署盘符
-        'log_path': 'E:\\ACC\\Log',
-        'processes': ['Oracle'],
-        'services': [  # NSSM管理的服务
-            {'service_name': 'ACC.Server', 'display_name': 'ACC.Server'},
-            {'service_name': 'ACC.MQ', 'display_name': 'ACC.MQ'},
-            {'service_name': 'ACC.LogReader', 'display_name': 'LogReader'}
-        ],
-        'has_oracle': True,
-        'sort_order': 4
-    },
-    '194': {
-        'name': 'L EPP Production',
-        'name_cn': 'L_EPP',
-        'ip': '172.17.10.194',
-        'os': 'windows',
-        'acc_drive': 'E',  # ACC部署盘符
-        'log_path': 'E:\\ACC\\ACC\\Log',
-        'processes': ['Oracle'],
-        'services': [  # NSSM管理的服务
-            {'service_name': 'ACC.Server', 'display_name': 'ACC.Server'},
-            {'service_name': 'ACC.MQ', 'display_name': 'ACC.MQ'},
-            {'service_name': 'ACC.LogReader', 'display_name': 'LogReader'}
-        ],
-        'has_oracle': True,
-        'sort_order': 5
-    },
-    '160': {
-        'name': 'iPlant Server',
-        'name_cn': 'iPlant',
-        'ip': '172.17.10.160',
-        'os': 'windows',
-        'acc_drive': 'D',  # ACC部署盘符
-        'log_path': 'D:\\iPlant\\Log',
-        'processes': [],
-        'services': [  # Windows服务（仅监控正常运行的服务）
-            {'service_name': 'hulu-workorder', 'display_name': 'hulu-workorder'},
-            {'service_name': 'iPlant.Features.WorkOrderSyncService', 'display_name': 'WorkOrderSync'},
-            {'service_name': 'redis', 'display_name': 'Redis'}
-        ],
-        'has_oracle': False,
-        'sort_order': 6
-    },
-    '163': {
-        'name': 'EAI Server',
-        'name_cn': 'EAI',
-        'ip': '172.17.10.163',
-        'os': 'linux',
-        'log_path': '/var/eai/logs',
-        'containers': ['hulu-eai', 'redis'],  # EAI容器和Redis服务
-        'container_metrics': True,  # 启用容器资源监测
-        'monitored_metrics': [
-            {'container': 'hulu-eai', 'metric': 'cpu', 'display_name': 'HULU EAI Container CPU'},
-            {'container': 'hulu-eai', 'metric': 'memory', 'display_name': 'HULU EAI Container Memory'},
-            {'container': 'hulu-eai', 'metric': 'network', 'display_name': 'HULU EAI Container Network I/O'}
-        ],
-        'has_oracle': False,
-        'sort_order': 7
-    },
-    '165': {
-        'name': 'Common Services',
-        'name_cn': 'SHARED',
-        'ip': '172.17.10.165',
-        'os': 'windows',
-        'acc_drive': 'D',  # ACC部署盘符
-        'log_path': 'D:\\ACC\\ACC\\Log',
-        'processes': ['Oracle'],  # 保留Oracle进程检测
-        'services': [  # Windows服务（通过服务名检测）
-            {'service_name': 'DT.TechTeam_WorkOrderHelper', 'display_name': '工单小管家'},
-            {'service_name': 'DT.TechTeam_Label_Inspection', 'display_name': '标签验证'},
-            {'service_name': 'DT.TechTeam_C-EPS_Label_Print', 'display_name': 'C-EPS标签打印'},
-            {'service_name': 'DT.TechTeam_EAI_Log_Monitor', 'display_name': 'EAI日志监听'},
-            {'service_name': 'ACC.LogReader.Sync', 'display_name': 'LogReader同步'},
-            {'service_name': 'ACC.LogReader.Async', 'display_name': 'LogReader异步'}
-        ],
-        'has_oracle': True,
-        'oracle_type': 'factory',  # 工厂数据库，非产线数据库
-        'sort_order': 8
-    }
-}
-
-# Oracle database configurations
-ORACLE_CONFIGS = {
-    '164': {
-        'host': '172.17.10.164',
-        'port': 1521,
-        'service_name': 'ACC_DB',
-        'username': 'ACC',
-        'tablespaces': ['ACC_DATA', 'USERS', 'SYSAUX', 'SYSTEM']
-    },
-    '168': {
-        'host': '172.17.10.168',
-        'port': 1521,
-        'service_name': 'ACC_DB',
-        'username': 'ACC',
-        'tablespaces': ['ACC_DATA', 'USERS', 'SYSAUX', 'SYSTEM']
-    },
-    '153': {
-        'host': '172.17.10.153',
-        'port': 1521,
-        'service_name': 'ACC_DB',
-        'username': 'ACC',
-        'tablespaces': ['ACC_DATA', 'USERS', 'SYSAUX', 'SYSTEM']
-    },
-    '193': {
-        'host': '172.17.10.193',
-        'port': 1521,
-        'service_name': 'ACC_DB',
-        'username': 'ACC',
-        'tablespaces': ['ACC_DATA', 'USERS', 'SYSAUX', 'SYSTEM']
-    },
-    '194': {
-        'host': '172.17.10.194',
-        'port': 1521,
-        'service_name': 'ACC_DB',
-        'username': 'ACC',
-        'tablespaces': ['ACC_DATA', 'USERS', 'SYSAUX', 'SYSTEM']
-    },
-    '165': {
-        'host': '172.17.10.165',
-        'port': 1521,
-        'service_name': 'COMMON_DB',
-        'username': 'ACC',
-        'tablespaces': ['ACC_DATA', 'USERS', 'SYSAUX', 'SYSTEM']
-    }
-}
+SERVERS, ORACLE_CONFIGS = load_servers_from_json()
 
 # SSH credentials (using key-based authentication)
 SSH_CREDENTIALS = {

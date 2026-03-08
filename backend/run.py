@@ -26,11 +26,11 @@ from app.utils.scheduler import scheduler
 # Create application
 app = create_app()
 
-# Initialize scheduler but don't start it yet (start manually after testing)
-# scheduler.init_app(app)
-# with app.app_context():
-#     scheduler.start()
-print("Scheduler disabled for testing")
+# Initialize and start scheduler for background monitoring
+scheduler.init_app(app)
+with app.app_context():
+    scheduler.start()
+print("Scheduler started - background monitoring active")
 
 
 if __name__ == '__main__':

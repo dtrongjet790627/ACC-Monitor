@@ -47,6 +47,9 @@ export const useMonitorStore = defineStore('monitor', () => {
   // 告警列表 - 初始为空，从API获取
   const alerts = ref([])
 
+  // 系统日志列表 - 用于SystemLog组件显示
+  const systemLogs = ref([])
+
   // WebSocket连接状态
   const wsConnected = ref(false)
 
@@ -150,6 +153,34 @@ export const useMonitorStore = defineStore('monitor', () => {
     }
   }
 
+  // 添加系统日志（从WebSocket接收）
+  function addSystemLog(log) {
+    // log format: {time, timestamp, level, server_id, message}
+    systemLogs.value.unshift({
+      time: log.time,
+      level: log.level,
+      message: log.message
+    })
+    // 保持最多50条日志
+    if (systemLogs.value.length > 50) {
+      systemLogs.value.pop()
+    }
+  }
+
+  // 设置系统日志批量数据（初始加载）
+  function setSystemLogs(logs) {
+    systemLogs.value = logs.map(log => ({
+      time: log.time,
+      level: log.level,
+      message: log.message
+    })).slice(0, 50)
+  }
+
+  // 获取格式化的系统日志（用于SystemLog组件）
+  function getFormattedSystemLogs() {
+    return systemLogs.value
+  }
+
   // 获取服务器详情
   function getServerById(id) {
     return servers.value.find(s => s.id === id)
@@ -222,6 +253,7 @@ export const useMonitorStore = defineStore('monitor', () => {
   return {
     servers,
     alerts,
+    systemLogs,
     wsConnected,
     loading,
     lastUpdate,
@@ -237,6 +269,9 @@ export const useMonitorStore = defineStore('monitor', () => {
     handleServerOffline,
     handleConnectionStateChange,
     addAlert,
+    addSystemLog,
+    setSystemLogs,
+    getFormattedSystemLogs,
     getServerById,
     fetchServers,
     startAutoRefresh,

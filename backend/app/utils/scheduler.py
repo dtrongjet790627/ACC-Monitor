@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from config.settings import Config, SERVERS
 
 # Configure logging
@@ -20,6 +21,9 @@ class MonitorScheduler:
     def __init__(self, app=None):
         self.scheduler = BackgroundScheduler()
         self.app = app
+        # Counter to control frequency of healthy server info logs
+        # Key: server_id, Value: check count since last info log
+        self._health_check_counter = {}
 
         if app:
             self.init_app(app)
@@ -62,6 +66,24 @@ class MonitorScheduler:
             replace_existing=True
         )
 
+        # Add periodic health check logging - shows system is actively monitoring
+        self.scheduler.add_job(
+            func=self._log_health_status,
+            trigger=IntervalTrigger(seconds=60),  # Log health status every 60 seconds
+            id='log_health_status',
+            name='Log system health status',
+            replace_existing=True
+        )
+
+        # Daily log compression at 00:05 - compress previous day's log files
+        self.scheduler.add_job(
+            func=self._compress_old_logs,
+            trigger=CronTrigger(hour=0, minute=5),
+            id='compress_logs',
+            name='Compress previous day logs',
+            replace_existing=True
+        )
+
     def start(self):
         """Start the scheduler"""
         if not self.scheduler.running:
@@ -79,19 +101,23 @@ class MonitorScheduler:
         with self.app.app_context():
             from app.services.monitor_service import MonitorService
             from app.services.restart_service import RestartService
+            from app.services.log_service import LogService
             from app.api.websocket import (
                 broadcast_server_status,
                 broadcast_process_stopped,
-                broadcast_process_restarted
+                broadcast_process_restarted,
+                broadcast_system_log
             )
             from app.models import Alert
             from app import db
 
             monitor_service = MonitorService()
             restart_service = RestartService()
+            log_service = LogService()
 
             for server_id in SERVERS.keys():
                 server_config = SERVERS[server_id]
+                server_name = server_config.get('name_cn', server_config['name'])
                 os_type = server_config.get('os', 'windows')
 
                 # Get processes
@@ -105,6 +131,14 @@ class MonitorScheduler:
                     if process.get('status') == 'stopped':
                         # Broadcast stopped event
                         broadcast_process_stopped(server_id, process['name'])
+
+                        # Add system log for stopped process
+                        log_entry = log_service.add_system_log(
+                            'critical',
+                            server_id,
+                            f"{server_name}: Process {process['name']} stopped"
+                        )
+                        broadcast_system_log(log_entry)
 
                         # Create alert
                         alert = Alert(
@@ -128,6 +162,28 @@ class MonitorScheduler:
                                 result['success']
                             )
 
+                            # Add system log for restart attempt
+                            restart_level = 'info' if result['success'] else 'warning'
+                            restart_msg = f"{server_name}: Process {process['name']} restarted successfully" if result['success'] else f"{server_name}: Failed to restart {process['name']}"
+                            log_entry = log_service.add_system_log(restart_level, server_id, restart_msg)
+                            broadcast_system_log(log_entry)
+
+                # If no stopped processes, log a health check pass (every 3rd check per server)
+                stopped_processes = [p for p in processes if p.get('status') == 'stopped']
+                if not stopped_processes:
+                    self._health_check_counter[server_id] = self._health_check_counter.get(server_id, 0) + 1
+                    if self._health_check_counter[server_id] >= 3:
+                        self._health_check_counter[server_id] = 0
+                        log_entry = log_service.add_system_log(
+                            'info',
+                            server_id,
+                            f"{server_name}: Service health check passed"
+                        )
+                        broadcast_system_log(log_entry)
+                else:
+                    # Reset counter when there are issues
+                    self._health_check_counter[server_id] = 0
+
                 db.session.commit()
 
                 # Broadcast updated status
@@ -145,14 +201,18 @@ class MonitorScheduler:
         """Check all database status"""
         with self.app.app_context():
             from app.services.database_service import DatabaseService
-            from app.api.websocket import broadcast_tablespace_warning
+            from app.services.log_service import LogService
+            from app.api.websocket import broadcast_tablespace_warning, broadcast_system_log
             from app.models import Alert
             from app import db
             from config.settings import ORACLE_CONFIGS
 
             database_service = DatabaseService()
+            log_service = LogService()
 
             for server_id in ORACLE_CONFIGS.keys():
+                server_config = SERVERS.get(server_id, {})
+                server_name = server_config.get('name_cn', server_config.get('name', server_id))
                 db_status = database_service.get_database_status(server_id)
 
                 # Check tablespace usage
@@ -165,8 +225,16 @@ class MonitorScheduler:
                             ts['used_percent']
                         )
 
-                        # Create alert
+                        # Add system log for tablespace warning
                         level = 'critical' if ts['status'] == 'critical' else 'warning'
+                        log_entry = log_service.add_system_log(
+                            level,
+                            server_id,
+                            f"{server_name}: Tablespace {ts['name']} at {ts['used_percent']}%"
+                        )
+                        broadcast_system_log(log_entry)
+
+                        # Create alert
                         alert = Alert(
                             server_id=server_id,
                             level=level,
@@ -181,13 +249,15 @@ class MonitorScheduler:
         """Scan logs for alerts"""
         with self.app.app_context():
             from app.services.log_service import LogService
-            from app.api.websocket import broadcast_log_alert
+            from app.api.websocket import broadcast_log_alert, broadcast_system_log
             from app.models import Alert
             from app import db
 
             log_service = LogService()
 
             for server_id in SERVERS.keys():
+                server_config = SERVERS.get(server_id, {})
+                server_name = server_config.get('name_cn', server_config.get('name', server_id))
                 alerts = log_service.scan_for_alerts(server_id)
 
                 for alert_data in alerts:
@@ -198,8 +268,17 @@ class MonitorScheduler:
                         alert_data['message']
                     )
 
-                    # Only create DB record for critical/error
+                    # Add system log for critical/error log alerts
                     if alert_data['level'] in ['critical', 'error']:
+                        # Truncate long messages for display
+                        short_msg = alert_data['message'][:100] + '...' if len(alert_data['message']) > 100 else alert_data['message']
+                        log_entry = log_service.add_system_log(
+                            alert_data['level'],
+                            server_id,
+                            f"{server_name}: {short_msg}"
+                        )
+                        broadcast_system_log(log_entry)
+
                         alert = Alert(
                             server_id=server_id,
                             level=alert_data['level'],
@@ -217,10 +296,12 @@ class MonitorScheduler:
         """
         with self.app.app_context():
             from app.services.monitor_service import MonitorService
+            from app.services.log_service import LogService
             from app.services.agent_data_service import agent_data_service
-            from app.api.websocket import broadcast_server_status
+            from app.api.websocket import broadcast_server_status, broadcast_system_log
 
             monitor_service = MonitorService()
+            log_service = LogService()
 
             # Get list of offline servers
             offline_servers = []
@@ -243,10 +324,19 @@ class MonitorScheduler:
                         logger.info(f"[Scheduler] Server {server_id} recovered - fetching fresh status")
 
                         server_config = SERVERS[server_id]
+                        server_name = server_config.get('name_cn', server_config['name'])
                         status = monitor_service._get_single_server_status(server_id)
 
                         # Broadcast updated status to all clients
                         broadcast_server_status(status)
+
+                        # Add system log for server recovery
+                        log_entry = log_service.add_system_log(
+                            'info',
+                            server_id,
+                            f"{server_name}: Connection recovered"
+                        )
+                        broadcast_system_log(log_entry)
 
                         # Log recovery event
                         from app.models import Alert
@@ -263,6 +353,76 @@ class MonitorScheduler:
 
                 except Exception as e:
                     logger.error(f"[Scheduler] Error probing {server_id}: {e}")
+
+
+    def _compress_old_logs(self):
+        """
+        Compress previous day's log files.
+        Scans the logs directory and gzip-compresses all .log files
+        that are not from today. Runs daily at 00:05 via CronTrigger.
+        """
+        with self.app.app_context():
+            from app.services.log_service import system_log_buffer
+            try:
+                system_log_buffer.compress_old_logs()
+                logger.info("[Scheduler] Old log compression completed")
+            except Exception as e:
+                logger.error(f"[Scheduler] Error compressing old logs: {e}")
+
+    def _log_health_status(self):
+        """
+        Log periodic health status messages
+        This provides visual feedback that monitoring is active
+        """
+        with self.app.app_context():
+            from app.services.monitor_service import MonitorService
+            from app.services.log_service import LogService
+            from app.services.agent_data_service import agent_data_service
+            from app.api.websocket import broadcast_system_log
+
+            monitor_service = MonitorService()
+            log_service = LogService()
+
+            # Count online/offline servers
+            online_count = 0
+            offline_count = 0
+            warning_count = 0
+
+            for server_id in SERVERS.keys():
+                if agent_data_service.is_agent_online(server_id):
+                    online_count += 1
+                else:
+                    # Check SSH fallback status
+                    ssh_status = monitor_service._ssh_connection_status.get(server_id, {})
+                    if ssh_status.get('connected'):
+                        online_count += 1
+                    else:
+                        offline_count += 1
+
+            # Generate appropriate log message based on status
+            if offline_count == 0:
+                # All servers healthy
+                log_entry = log_service.add_system_log(
+                    'info',
+                    'SYSTEM',
+                    f"All {online_count} servers healthy"
+                )
+            elif offline_count > 0 and online_count > 0:
+                # Mixed status
+                log_entry = log_service.add_system_log(
+                    'warning',
+                    'SYSTEM',
+                    f"Health check: {online_count} online, {offline_count} offline"
+                )
+            else:
+                # All offline
+                log_entry = log_service.add_system_log(
+                    'critical',
+                    'SYSTEM',
+                    f"All {offline_count} servers offline"
+                )
+
+            broadcast_system_log(log_entry)
 
 
 # Global scheduler instance

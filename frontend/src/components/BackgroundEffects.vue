@@ -6,10 +6,8 @@
     <!-- Grid background -->
     <div class="grid-bg"></div>
 
-    <!-- Multi-layer Matrix Rain -->
-    <canvas ref="matrixCanvasBg" class="matrix-canvas matrix-bg-layer"></canvas>
-    <canvas ref="matrixCanvasMid" class="matrix-canvas matrix-mid-layer"></canvas>
-    <canvas ref="matrixCanvasFg" class="matrix-canvas matrix-fg-layer"></canvas>
+    <!-- Single unified Matrix Rain canvas (merged 3 layers) -->
+    <canvas ref="matrixCanvas" class="matrix-canvas matrix-unified-layer"></canvas>
 
     <!-- CRT scanlines -->
     <div class="crt-scanlines"></div>
@@ -48,16 +46,12 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
 // Canvas refs
-const matrixCanvasBg = ref(null)
-const matrixCanvasMid = ref(null)
-const matrixCanvasFg = ref(null)
+const matrixCanvas = ref(null)
 const noiseOverlay = ref(null)
 const screenFlicker = ref(null)
 
 // Animation IDs
-let bgAnimationId = null
-let midAnimationId = null
-let fgAnimationId = null
+let animationId = null
 let noiseInterval = null
 let flickerInterval = null
 
@@ -68,34 +62,29 @@ let isVisible = true
 const matrixChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()01'
 const charArray = matrixChars.split('')
 
-// Matrix Rain Layer Class - Optimized with requestAnimationFrame and reduced redraws
+// Matrix Rain Layer Config - used by unified renderer (NO shadowBlur)
 class MatrixRainLayer {
-  constructor(canvas, config) {
-    this.canvas = canvas
-    this.ctx = canvas.getContext('2d', { alpha: false })
-    this.config = config
+  constructor(config) {
     this.columns = []
     this.fontSize = config.fontSize || 16
-    this.speedMultiplier = config.speedMultiplier || 1.0  // Speed multiplier for layer
+    this.speedMultiplier = config.speedMultiplier || 1.0
     this.speedMin = config.speedMin || 0.5
     this.speedMax = config.speedMax || 1.5
     this.brightnessMin = config.brightnessMin || 0.3
     this.brightnessMax = config.brightnessMax || 0.9
-    this.fadeAlpha = config.fadeAlpha || 0.05
     this.headColor = config.headColor || '#ffffff'
+    this.headColorBright = config.headColorBright || '#00ffcc'
     this.trailColor = config.trailColor || '#00d4aa'
-    this.columnDensity = config.columnDensity || 0.6  // Character column density
+    this.columnDensity = config.columnDensity || 0.6
+    this.opacity = config.opacity || 1.0
 
     // Character pool for reuse
     this.charPool = []
     this.poolSize = 100
     this.initCharPool()
-
-    this.init()
   }
 
   initCharPool() {
-    // Pre-generate characters for reuse
     for (let i = 0; i < this.poolSize; i++) {
       this.charPool.push(charArray[Math.floor(Math.random() * charArray.length)])
     }
@@ -105,25 +94,14 @@ class MatrixRainLayer {
     return this.charPool[Math.floor(Math.random() * this.poolSize)]
   }
 
-  init() {
-    this.resize()
-    this.initColumns()
-  }
-
-  resize() {
-    this.canvas.width = window.innerWidth
-    this.canvas.height = window.innerHeight
-    this.initColumns()
-  }
-
-  initColumns() {
-    const columnCount = Math.floor(this.canvas.width / (this.fontSize * this.columnDensity))
+  initColumns(canvasWidth, canvasHeight) {
+    const columnCount = Math.floor(canvasWidth / (this.fontSize * this.columnDensity))
     this.columns = []
 
     for (let i = 0; i < columnCount; i++) {
       this.columns.push({
         x: i * this.fontSize * this.columnDensity,
-        y: Math.random() * this.canvas.height,
+        y: Math.random() * canvasHeight,
         speed: (this.speedMin + Math.random() * (this.speedMax - this.speedMin)) * this.speedMultiplier,
         brightness: this.brightnessMin + Math.random() * (this.brightnessMax - this.brightnessMin),
         trail: [],
@@ -133,48 +111,37 @@ class MatrixRainLayer {
     }
   }
 
-  draw() {
-    // Use semi-transparent black to create fade effect
-    this.ctx.fillStyle = `rgba(10, 10, 10, ${this.fadeAlpha})`
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
-
-    this.ctx.font = `${this.fontSize}px Consolas, monospace`
-    this.ctx.textBaseline = 'top'
+  draw(ctx, canvasWidth, canvasHeight) {
+    ctx.font = `${this.fontSize}px Consolas, monospace`
+    ctx.textBaseline = 'top'
+    ctx.globalAlpha = this.opacity
 
     for (let i = 0; i < this.columns.length; i++) {
       const col = this.columns[i]
       const char = this.getRandomChar()
 
-      // Draw trail (optimized - only draw visible parts)
+      // Draw trail - NO shadowBlur, just color opacity for performance
       const trailLen = Math.min(col.trail.length, col.trailLength)
       for (let t = 0; t < trailLen; t++) {
         const trailY = col.y - (t + 1) * this.fontSize
-        if (trailY > 0 && trailY < this.canvas.height) {
+        if (trailY > 0 && trailY < canvasHeight) {
           const trailOpacity = col.brightness * (1 - (t / col.trailLength)) * 0.6
-          this.ctx.fillStyle = `rgba(0, 212, 170, ${trailOpacity})`
-          this.ctx.shadowBlur = 0
-          this.ctx.fillText(col.trail[t] || char, col.x, trailY)
+          ctx.fillStyle = `rgba(0, 212, 170, ${trailOpacity})`
+          ctx.fillText(col.trail[t] || char, col.x, trailY)
         }
       }
 
-      // Draw head character with glow effect
+      // Draw head character - use brighter colors instead of shadowBlur
       const headBrightness = col.brightness
       if (headBrightness > 0.8) {
-        this.ctx.fillStyle = this.headColor
-        this.ctx.shadowBlur = 20
-        this.ctx.shadowColor = this.trailColor
+        ctx.fillStyle = this.headColor  // White for brightest heads
       } else if (headBrightness > 0.6) {
-        this.ctx.fillStyle = this.trailColor
-        this.ctx.shadowBlur = 15
-        this.ctx.shadowColor = this.trailColor
+        ctx.fillStyle = this.headColorBright  // Bright cyan-green instead of shadowBlur
       } else {
-        this.ctx.fillStyle = `rgba(0, 212, 170, ${headBrightness})`
-        this.ctx.shadowBlur = 8
-        this.ctx.shadowColor = this.trailColor
+        ctx.fillStyle = `rgba(0, 212, 170, ${headBrightness})`
       }
 
-      this.ctx.fillText(char, col.x, col.y)
-      this.ctx.shadowBlur = 0
+      ctx.fillText(char, col.x, col.y)
 
       // Update trail
       col.trail.unshift(char)
@@ -186,7 +153,7 @@ class MatrixRainLayer {
       col.y += col.speed * this.fontSize
 
       // Reset when off screen
-      if (col.y > this.canvas.height && Math.random() > 0.975) {
+      if (col.y > canvasHeight && Math.random() > 0.975) {
         col.y = -this.fontSize
         col.speed = (this.speedMin + Math.random() * (this.speedMax - this.speedMin)) * this.speedMultiplier
         col.brightness = this.brightnessMin + Math.random() * (this.brightnessMax - this.brightnessMin)
@@ -194,97 +161,93 @@ class MatrixRainLayer {
         col.trailLength = 5 + Math.floor(Math.random() * 15)
       }
     }
+
+    ctx.globalAlpha = 1.0
   }
 }
 
-let matrixBgLayer = null
-let matrixMidLayer = null
-let matrixFgLayer = null
+let bgLayer = null
+let midLayer = null
+let fgLayer = null
+let ctx = null
 
 function initMatrixRain() {
-  // Background layer: slowest (0.5x speed), most transparent, largest font
-  if (matrixCanvasBg.value) {
-    matrixBgLayer = new MatrixRainLayer(matrixCanvasBg.value, {
-      fontSize: 12,           // Smallest font (background)
-      speedMultiplier: 0.5,   // 0.5x speed
-      speedMin: 0.3,
-      speedMax: 0.6,
-      brightnessMin: 0.15,
-      brightnessMax: 0.3,     // opacity 0.3
-      fadeAlpha: 0.02,
-      headColor: 'rgba(0, 212, 170, 0.4)',
-      trailColor: '#00d4aa',
-      columnDensity: 0.8
-    })
-  }
+  const canvas = matrixCanvas.value
+  if (!canvas) return
 
-  // Middle layer: medium speed (1.0x), medium transparency
-  if (matrixCanvasMid.value) {
-    matrixMidLayer = new MatrixRainLayer(matrixCanvasMid.value, {
-      fontSize: 14,           // Medium font
-      speedMultiplier: 1.0,   // 1.0x speed
-      speedMin: 0.5,
-      speedMax: 1.0,
-      brightnessMin: 0.35,
-      brightnessMax: 0.5,     // opacity 0.5
-      fadeAlpha: 0.04,
-      headColor: 'rgba(255, 255, 255, 0.7)',
-      trailColor: '#00d4aa',
-      columnDensity: 0.6
-    })
-  }
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
+  ctx = canvas.getContext('2d', { alpha: false })
 
-  // Foreground layer: fastest (1.5x speed), most visible, largest font
-  if (matrixCanvasFg.value) {
-    matrixFgLayer = new MatrixRainLayer(matrixCanvasFg.value, {
-      fontSize: 16,           // Largest font (foreground)
-      speedMultiplier: 1.5,   // 1.5x speed
-      speedMin: 0.8,
-      speedMax: 1.5,
-      brightnessMin: 0.6,
-      brightnessMax: 0.8,     // opacity 0.8
-      fadeAlpha: 0.06,
-      headColor: '#ffffff',
-      trailColor: '#00d4aa',
-      columnDensity: 0.5
-    })
-  }
+  // Background layer config
+  bgLayer = new MatrixRainLayer({
+    fontSize: 12,
+    speedMultiplier: 0.5,
+    speedMin: 0.3,
+    speedMax: 0.6,
+    brightnessMin: 0.25,
+    brightnessMax: 0.45,
+    headColor: 'rgba(0, 212, 170, 0.5)',
+    headColorBright: 'rgba(0, 255, 204, 0.5)',
+    trailColor: '#00d4aa',
+    columnDensity: 0.8,
+    opacity: 0.45
+  })
+  bgLayer.initColumns(canvas.width, canvas.height)
 
-  // Animation timing - optimized for 60fps
-  let bgLastTime = 0
-  let midLastTime = 0
-  let fgLastTime = 0
+  // Middle layer config
+  midLayer = new MatrixRainLayer({
+    fontSize: 14,
+    speedMultiplier: 1.0,
+    speedMin: 0.5,
+    speedMax: 1.0,
+    brightnessMin: 0.45,
+    brightnessMax: 0.65,
+    headColor: 'rgba(255, 255, 255, 0.8)',
+    headColorBright: '#00ffcc',
+    trailColor: '#00d4aa',
+    columnDensity: 0.6,
+    opacity: 0.65
+  })
+  midLayer.initColumns(canvas.width, canvas.height)
 
-  // Background: ~12fps for slow movement
-  function animateBg(currentTime) {
-    bgAnimationId = requestAnimationFrame(animateBg)
+  // Foreground layer config
+  fgLayer = new MatrixRainLayer({
+    fontSize: 16,
+    speedMultiplier: 1.5,
+    speedMin: 0.8,
+    speedMax: 1.5,
+    brightnessMin: 0.7,
+    brightnessMax: 0.95,
+    headColor: '#ffffff',
+    headColorBright: '#00ffcc',
+    trailColor: '#00d4aa',
+    columnDensity: 0.5,
+    opacity: 0.9
+  })
+  fgLayer.initColumns(canvas.width, canvas.height)
+
+  // Single unified animation loop at ~16fps (60ms interval)
+  let lastTime = 0
+  const frameInterval = 60  // ~16fps - matrix rain does not need high fps
+
+  function animate(currentTime) {
+    animationId = requestAnimationFrame(animate)
     if (!isVisible) return
-    if (currentTime - bgLastTime < 83) return  // ~12fps
-    bgLastTime = currentTime
-    if (matrixBgLayer) matrixBgLayer.draw()
+    if (currentTime - lastTime < frameInterval) return
+    lastTime = currentTime
+
+    // Fade overlay for trail effect
+    ctx.fillStyle = 'rgba(10, 10, 10, 0.04)'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    // Draw all 3 layers in order: bg -> mid -> fg
+    if (bgLayer) bgLayer.draw(ctx, canvas.width, canvas.height)
+    if (midLayer) midLayer.draw(ctx, canvas.width, canvas.height)
+    if (fgLayer) fgLayer.draw(ctx, canvas.width, canvas.height)
   }
 
-  // Middle: ~20fps for medium movement
-  function animateMid(currentTime) {
-    midAnimationId = requestAnimationFrame(animateMid)
-    if (!isVisible) return
-    if (currentTime - midLastTime < 50) return  // ~20fps
-    midLastTime = currentTime
-    if (matrixMidLayer) matrixMidLayer.draw()
-  }
-
-  // Foreground: ~30fps for fast movement
-  function animateFg(currentTime) {
-    fgAnimationId = requestAnimationFrame(animateFg)
-    if (!isVisible) return
-    if (currentTime - fgLastTime < 33) return  // ~30fps
-    fgLastTime = currentTime
-    if (matrixFgLayer) matrixFgLayer.draw()
-  }
-
-  animateBg(0)
-  animateMid(0)
-  animateFg(0)
+  animate(0)
 }
 
 function startNoiseEffect() {
@@ -295,7 +258,7 @@ function startNoiseEffect() {
     if (!isVisible) return
     const intensity = 0.02 + Math.random() * 0.03
     overlay.style.opacity = intensity.toString()
-  }, 100)
+  }, 500)
 }
 
 function startFlickerEffect() {
@@ -310,13 +273,17 @@ function startFlickerEffect() {
         flicker.classList.remove('active')
       }, 50 + Math.random() * 100)
     }
-  }, 200)
+  }, 1000)
 }
 
 function handleResize() {
-  if (matrixBgLayer) matrixBgLayer.resize()
-  if (matrixMidLayer) matrixMidLayer.resize()
-  if (matrixFgLayer) matrixFgLayer.resize()
+  const canvas = matrixCanvas.value
+  if (!canvas) return
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
+  if (bgLayer) bgLayer.initColumns(canvas.width, canvas.height)
+  if (midLayer) midLayer.initColumns(canvas.width, canvas.height)
+  if (fgLayer) fgLayer.initColumns(canvas.width, canvas.height)
 }
 
 function handleVisibilityChange() {
@@ -333,9 +300,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (bgAnimationId) cancelAnimationFrame(bgAnimationId)
-  if (midAnimationId) cancelAnimationFrame(midAnimationId)
-  if (fgAnimationId) cancelAnimationFrame(fgAnimationId)
+  if (animationId) cancelAnimationFrame(animationId)
   if (noiseInterval) clearInterval(noiseInterval)
   if (flickerInterval) clearInterval(flickerInterval)
 
@@ -390,22 +355,14 @@ onUnmounted(() => {
   height: 100%;
 }
 
-.matrix-bg-layer {
+.matrix-unified-layer {
   z-index: 2;
-  opacity: 0.3;  // Background layer: 0.3 opacity
+  opacity: 1.0;
+  // Use CSS filter for subtle glow instead of per-character shadowBlur (GPU composited once)
+  filter: blur(0.5px) brightness(1.1);
 }
 
-.matrix-mid-layer {
-  z-index: 3;
-  opacity: 0.5;  // Middle layer: 0.5 opacity
-}
-
-.matrix-fg-layer {
-  z-index: 4;
-  opacity: 0.8;  // Foreground layer: 0.8 opacity
-  filter: brightness(1.15);
-}
-
+// Global CRT scanlines - extremely subtle static texture only
 .crt-scanlines {
   position: absolute;
   top: 0;
@@ -416,17 +373,13 @@ onUnmounted(() => {
   pointer-events: none;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 0, 0, 0.15) 0px,
-    rgba(0, 0, 0, 0.15) 1px,
+    rgba(0, 0, 0, 0.03) 0px,
+    rgba(0, 0, 0, 0.03) 1px,
     transparent 1px,
     transparent 2px
   );
-  animation: scanlineFlicker 0.1s steps(2) infinite;
-}
-
-@keyframes scanlineFlicker {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.25; }
+  // Static texture, no animation - scanline effects are JS-driven per card
+  opacity: 0.05;
 }
 
 .noise-overlay {
@@ -481,20 +434,21 @@ onUnmounted(() => {
     top: 0;
     left: 0;
     width: 100%;
-    height: 3px;
+    height: 2px;
     background: linear-gradient(90deg,
       transparent,
-      rgba(0, 212, 170, 0.4),
-      rgba(0, 212, 170, 0.7),
-      rgba(0, 212, 170, 0.4),
+      rgba(0, 212, 170, 0.08),
+      rgba(0, 212, 170, 0.12),
+      rgba(0, 212, 170, 0.08),
       transparent
     );
-    box-shadow: 0 0 15px rgba(0, 212, 170, 0.4);
-    animation: scanLine 5s linear infinite;
+    // Very slow ambient sweep, barely visible - not competing with card effects
+    animation: scanLineGlobal 40s linear infinite reverse;
+    opacity: 0.15;
   }
 }
 
-@keyframes scanLine {
+@keyframes scanLineGlobal {
   0% { transform: translateY(0); }
   100% { transform: translateY(100vh); }
 }
@@ -553,6 +507,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   z-index: 8;
-  background: radial-gradient(ellipse at center, transparent 0%, rgba(10, 10, 10, 0.5) 100%);
+  // Reduced center darkening to show more matrix rain through foreground
+  background: radial-gradient(ellipse at center, transparent 0%, rgba(10, 10, 10, 0.20) 100%);
 }
 </style>

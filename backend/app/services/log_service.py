@@ -1,13 +1,232 @@
 # -*- coding: utf-8 -*-
 """
 ACC Monitor - Log Monitoring Service
+Supports persistent file-based logging with daily rotation and gzip compression.
 """
 import os
 import re
-from datetime import datetime
+import json
+import gzip
+import shutil
+import threading
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from collections import deque
 from config.settings import SERVERS, LOG_ALERT_KEYWORDS
 from app.services.monitor_service import MonitorService
+
+# Log file directory (absolute path based on backend root)
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'logs')
+
+
+class SystemLogBuffer:
+    """
+    Thread-safe circular buffer for system logs with file persistence.
+    - In-memory deque for real-time WebSocket push
+    - Daily log files in JSON Lines format
+    - Automatic gzip compression on day rollover
+    """
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._logs = deque(maxlen=100)  # Keep last 100 logs
+            cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if not self._initialized:
+            self._initialized = True
+            self._current_date = datetime.now().strftime('%Y-%m-%d')
+            self._file_lock = threading.Lock()
+            # Ensure logs directory exists
+            os.makedirs(LOG_DIR, exist_ok=True)
+
+    def _get_log_file_path(self, date_str: str) -> str:
+        """Get log file path for a given date string (YYYY-MM-DD)"""
+        return os.path.join(LOG_DIR, f'system_{date_str}.log')
+
+    def _check_day_rollover(self):
+        """
+        Check if the date has changed since the last log write.
+        If so, compress yesterday's log file and update current date.
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        if today != self._current_date:
+            old_date = self._current_date
+            self._current_date = today
+            # Compress the old day's log file in a background thread
+            old_file = self._get_log_file_path(old_date)
+            if os.path.exists(old_file):
+                self._compress_log_file(old_file)
+
+    def _compress_log_file(self, file_path: str):
+        """Compress a log file to .gz and remove the original"""
+        try:
+            gz_path = file_path + '.gz'
+            with open(file_path, 'rb') as f_in:
+                with gzip.open(gz_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            os.remove(file_path)
+        except Exception as e:
+            print(f"[LogService] Error compressing {file_path}: {e}")
+
+    def _write_to_file(self, log_entry: Dict):
+        """Append a log entry to the current day's log file (thread-safe)"""
+        with self._file_lock:
+            self._check_day_rollover()
+            file_path = self._get_log_file_path(self._current_date)
+            try:
+                with open(file_path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
+            except Exception as e:
+                print(f"[LogService] Error writing log to file: {e}")
+
+    def add_log(self, level: str, server_id: str, message: str) -> Dict:
+        """
+        Add a new log entry.
+        1. Write to in-memory deque (real-time push)
+        2. Append to daily log file (persistence)
+        Returns the created log entry
+        """
+        now = datetime.now()
+        log_entry = {
+            'time': now.strftime('%H:%M:%S'),
+            'timestamp': now.isoformat(),
+            'level': level.lower(),  # critical, warning, info
+            'server_id': server_id,
+            'message': message
+        }
+        self._logs.appendleft(log_entry)
+        self._write_to_file(log_entry)
+        return log_entry
+
+    def get_recent_logs(self, count: int = 50) -> List[Dict]:
+        """Get most recent logs from memory"""
+        return list(self._logs)[:count]
+
+    def get_logs_by_date(self, date_str: str) -> List[Dict]:
+        """
+        Get logs for a specific date.
+        - If date is today, return from memory.
+        - If historical, read from .log or .log.gz file.
+        Args:
+            date_str: Date in YYYY-MM-DD format
+        Returns:
+            List of log entries (newest first)
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        if date_str == today:
+            return list(self._logs)
+
+        # Try plain log file first
+        log_file = self._get_log_file_path(date_str)
+        if os.path.exists(log_file):
+            return self._read_log_file(log_file)
+
+        # Try gzipped file
+        gz_file = log_file + '.gz'
+        if os.path.exists(gz_file):
+            return self._read_gz_log_file(gz_file)
+
+        return []
+
+    def _read_log_file(self, file_path: str) -> List[Dict]:
+        """Read log entries from a plain log file"""
+        logs = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            logs.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+        except Exception as e:
+            print(f"[LogService] Error reading log file {file_path}: {e}")
+        # Return newest first (reverse chronological)
+        logs.reverse()
+        return logs
+
+    def _read_gz_log_file(self, gz_path: str) -> List[Dict]:
+        """Read log entries from a gzipped log file"""
+        logs = []
+        try:
+            with gzip.open(gz_path, 'rt', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            logs.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+        except Exception as e:
+            print(f"[LogService] Error reading gzip log file {gz_path}: {e}")
+        logs.reverse()
+        return logs
+
+    def load_today_from_file(self):
+        """
+        Load today's logs from file into memory deque.
+        Called on startup to restore logs after a restart.
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        log_file = self._get_log_file_path(today)
+        if not os.path.exists(log_file):
+            return
+
+        logs = self._read_log_file(log_file)
+        # _read_log_file returns newest-first; deque expects newest at front
+        # Load up to 100 most recent entries
+        recent = logs[:100]
+        self._logs.clear()
+        for entry in recent:
+            self._logs.append(entry)
+
+    def compress_old_logs(self):
+        """
+        Compress all non-today .log files in the logs directory.
+        Called by the scheduler daily at 00:05.
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        try:
+            for filename in os.listdir(LOG_DIR):
+                if filename.startswith('system_') and filename.endswith('.log'):
+                    # Extract date from filename: system_YYYY-MM-DD.log
+                    date_part = filename.replace('system_', '').replace('.log', '')
+                    if date_part != today:
+                        file_path = os.path.join(LOG_DIR, filename)
+                        self._compress_log_file(file_path)
+                        print(f"[LogService] Compressed old log: {filename}")
+        except Exception as e:
+            print(f"[LogService] Error during old log compression: {e}")
+
+    def clear(self):
+        """Clear all in-memory logs"""
+        self._logs.clear()
+
+
+# Global singleton instance
+system_log_buffer = SystemLogBuffer()
+
+
+def initialize_system_logs():
+    """
+    Initialize system log buffer with startup messages.
+    - First loads any existing today's logs from file (survives restart)
+    - Then adds startup messages
+    """
+    buffer = system_log_buffer
+
+    # Load today's persisted logs from file (restore after restart)
+    buffer.load_today_from_file()
+
+    # Add startup messages (always, to mark each startup)
+    buffer.add_log('info', 'SYSTEM', 'System monitoring initialized')
+    buffer.add_log('info', 'SYSTEM', 'WebSocket server ready')
+    buffer.add_log('info', 'SYSTEM', 'Connecting to servers...')
 
 
 class LogService:
@@ -15,6 +234,18 @@ class LogService:
 
     def __init__(self):
         self.monitor_service = MonitorService()
+        self.log_buffer = system_log_buffer
+
+    def add_system_log(self, level: str, server_id: str, message: str) -> Dict:
+        """
+        Add a system monitoring log
+        This is the main entry point for generating real-time system logs
+        """
+        return self.log_buffer.add_log(level, server_id, message)
+
+    def get_system_logs(self, count: int = 50) -> List[Dict]:
+        """Get recent system logs for display"""
+        return self.log_buffer.get_recent_logs(count)
 
     def get_log_path(self, server_id: str) -> Optional[str]:
         """Get log path for a server"""

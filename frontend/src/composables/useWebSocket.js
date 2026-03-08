@@ -15,6 +15,10 @@ export function useWebSocket() {
         isConnected.value = true
         monitorStore.wsConnected = true
         connectionError.value = null
+        // Request initial system logs after connection
+        setTimeout(() => {
+          wsService.requestSystemLogs(50)
+        }, 500)
       })
       .catch((error) => {
         isConnected.value = false
@@ -87,6 +91,29 @@ export function useWebSocket() {
         monitorStore.handleConnectionStateChange(data.serverId, data.newState, data.oldState)
       })
     )
+
+    // 系统日志事件
+    unsubscribers.push(
+      wsService.on('systemLog', (data) => {
+        if (data.log) {
+          monitorStore.addSystemLog(data.log)
+        }
+      })
+    )
+
+    // 系统日志批量加载
+    unsubscribers.push(
+      wsService.on('systemLogsBatch', (data) => {
+        if (data.logs) {
+          monitorStore.setSystemLogs(data.logs)
+        }
+      })
+    )
+  }
+
+  // 请求系统日志
+  function requestSystemLogs(count = 50) {
+    wsService.requestSystemLogs(count)
   }
 
   function cleanupListeners() {
@@ -108,6 +135,7 @@ export function useWebSocket() {
     connectionError,
     connect,
     disconnect,
+    requestSystemLogs,
     wsService
   }
 }

@@ -88,6 +88,17 @@ class WebSocketService {
           this.emit('serverStatusUpdate', data)
         })
 
+        // System log events
+        this.socket.on('system_log', (data) => {
+          console.log('[WS] System log:', data.log?.message)
+          this.emit('systemLog', data)
+        })
+
+        this.socket.on('system_logs_batch', (data) => {
+          console.log('[WS] System logs batch:', data.logs?.length, 'logs')
+          this.emit('systemLogsBatch', data)
+        })
+
       } catch (error) {
         console.error('[WS] Failed to create socket:', error)
         reject(error)
@@ -154,6 +165,11 @@ class WebSocketService {
   // 确认告警
   acknowledgeAlert(alertId) {
     this.send('alert:ack', { alertId })
+  }
+
+  // 请求系统日志
+  requestSystemLogs(count = 50) {
+    this.send('request_system_logs', { count })
   }
 
   // 获取连接状态

@@ -1,7 +1,7 @@
 <template>
   <div
     class="server-card"
-    :class="[`status-${server.status}`]"
+    :class="[`status-${server.status}`, { 'crt-glitch': glitchActive, [`glitch-${glitchType}`]: glitchActive && glitchType }]"
     @click="handleClick"
     ref="cardRef"
   >
@@ -208,7 +208,7 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, watch, onMounted } from 'vue'
+import { computed, ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   server: {
@@ -220,6 +220,40 @@ const props = defineProps({
 const emit = defineEmits(['click'])
 
 const cardRef = ref(null)
+
+// ========================================
+// JS-driven sporadic CRT glitch effect
+// Each card instance runs its own independent timer
+// ========================================
+const glitchActive = ref(false)
+const glitchType = ref('')
+let glitchTimer = null
+let glitchEndTimer = null
+
+const glitchTypes = ['scan-down', 'scan-up', 'flicker', 'shift']
+
+function scheduleGlitch() {
+  // Random interval: 5-20 seconds between glitches
+  const delay = 5000 + Math.random() * 15000
+  glitchTimer = setTimeout(() => {
+    // Pick a random glitch type
+    glitchType.value = glitchTypes[Math.floor(Math.random() * glitchTypes.length)]
+    glitchActive.value = true
+
+    // Effect lasts 200-800ms
+    const duration = 200 + Math.random() * 600
+    const el = cardRef.value
+    if (el) {
+      el.style.setProperty('--glitch-duration', `${(duration / 1000).toFixed(2)}s`)
+    }
+
+    glitchEndTimer = setTimeout(() => {
+      glitchActive.value = false
+      glitchType.value = ''
+      scheduleGlitch()
+    }, duration)
+  }, delay)
+}
 
 // Data animation states
 const cpuAnimating = ref(false)
@@ -271,6 +305,15 @@ onMounted(() => {
   prevDisk = props.server.tablespaceUsage
   prevMem = props.server.memoryUsage
   prevPing = props.server.ping
+
+  // Start sporadic glitch effect with random initial delay (0-8s)
+  const initialDelay = Math.random() * 8000
+  glitchTimer = setTimeout(() => scheduleGlitch(), initialDelay)
+})
+
+onUnmounted(() => {
+  if (glitchTimer) clearTimeout(glitchTimer)
+  if (glitchEndTimer) clearTimeout(glitchEndTimer)
 })
 
 // Tooltip state
@@ -423,7 +466,7 @@ function truncateMessage(message) {
     z-index: 1;
   }
 
-  // 扫描线效果
+  // 扫描线效果 - JS-driven sporadic effect (no continuous animation)
   .card-scanline {
     position: absolute;
     top: 0;
@@ -431,15 +474,10 @@ function truncateMessage(message) {
     width: 100%;
     height: 3px;
     background: linear-gradient(90deg, transparent, rgba($neon-green, 0.8), transparent);
-    transform: translateX(-100%);
-    animation: cardScan 4s linear infinite;
+    transform: translateY(-100%);
     pointer-events: none;
     z-index: 2;
-  }
-
-  @keyframes cardScan {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
+    opacity: 0;
   }
 
   // 边角装饰
@@ -560,7 +598,7 @@ function truncateMessage(message) {
       opacity: 0.4;
     }
     .card-scanline {
-      display: none;
+      display: none !important;
     }
   }
 
@@ -575,9 +613,7 @@ function truncateMessage(message) {
       box-shadow: 0 0 10px $neon-green;
     }
 
-    .card-scanline {
-      animation-duration: 2s;
-    }
+    // Scanline is now JS-driven, no hover animation change needed
   }
 
   @keyframes hoverGlitch {
@@ -596,6 +632,87 @@ function truncateMessage(message) {
 @keyframes errorPulse {
   0%, 100% { box-shadow: 0 0 20px rgba($neon-red, 0.2); }
   50% { box-shadow: 0 0 40px rgba($neon-red, 0.4); }
+}
+
+// ============================================
+// Sporadic CRT Glitch Effects (JS-driven)
+// Only active when .crt-glitch class is present
+// ============================================
+.server-card.crt-glitch {
+  .card-scanline {
+    opacity: 1;
+  }
+
+  // Type 1: Scan line sweeps down
+  &.glitch-scan-down .card-scanline {
+    animation: cardGlitchScanDown var(--glitch-duration, 0.4s) linear forwards;
+  }
+
+  // Type 2: Scan line sweeps up
+  &.glitch-scan-up .card-scanline {
+    animation: cardGlitchScanUp var(--glitch-duration, 0.4s) linear forwards;
+  }
+
+  // Type 3: Brief signal flicker
+  &.glitch-flicker {
+    animation: cardGlitchFlicker var(--glitch-duration, 0.4s) steps(3) forwards;
+  }
+
+  // Type 4: Horizontal displacement jitter
+  &.glitch-shift {
+    animation: cardGlitchShift var(--glitch-duration, 0.4s) steps(4) forwards;
+  }
+}
+
+@keyframes cardGlitchScanDown {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0.4;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(calc(100vh));
+    opacity: 0;
+  }
+}
+
+@keyframes cardGlitchScanUp {
+  0% {
+    transform: translateY(calc(100vh));
+    opacity: 0.4;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes cardGlitchFlicker {
+  0% { opacity: 1; }
+  15% { opacity: 0.6; }
+  30% { opacity: 0.9; }
+  45% { opacity: 0.5; }
+  60% { opacity: 0.85; }
+  75% { opacity: 0.55; }
+  90% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+@keyframes cardGlitchShift {
+  0% { transform: translateX(0) translateY(-5px); }
+  12% { transform: translateX(-2px) translateY(-5px); }
+  25% { transform: translateX(3px) translateY(-5px); }
+  37% { transform: translateX(-1px) translateY(-5px); }
+  50% { transform: translateX(2px) translateY(-5px); }
+  62% { transform: translateX(-3px) translateY(-5px); }
+  75% { transform: translateX(1px) translateY(-5px); }
+  87% { transform: translateX(-2px) translateY(-5px); }
+  100% { transform: translateX(0) translateY(-5px); }
 }
 
 // 服务器头部

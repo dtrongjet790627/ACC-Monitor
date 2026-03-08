@@ -7,20 +7,35 @@ from flask_socketio import emit, join_room, leave_room
 from app import socketio
 from app.services.monitor_service import MonitorService
 from app.services.database_service import DatabaseService
-from app.services.log_service import LogService
+from app.services.log_service import LogService, initialize_system_logs
 
 # Initialize services
 monitor_service = MonitorService()
 database_service = DatabaseService()
 log_service = LogService()
 
+# Initialize system logs on module load
+initialize_system_logs()
+
 
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
     print(f"Client connected at {datetime.utcnow()}")
+
+    # Add connection log with descriptive message
+    log_entry = log_service.add_system_log('info', 'SYSTEM', 'Dashboard client connected')
+    broadcast_system_log(log_entry)
+
     emit('connected', {
         'status': 'connected',
+        'timestamp': datetime.utcnow().isoformat()
+    })
+
+    # Send recent system logs to newly connected client (50 entries for richer history)
+    recent_logs = log_service.get_system_logs(50)
+    emit('system_logs_batch', {
+        'logs': recent_logs,
         'timestamp': datetime.utcnow().isoformat()
     })
 
@@ -192,3 +207,48 @@ def broadcast_connection_state_change(server_id, new_state, old_state):
         'old_state': old_state,
         'timestamp': datetime.utcnow().isoformat()
     }, room='status')
+
+
+def broadcast_system_log(log_entry):
+    """
+    Broadcast a system log entry to all clients
+    log_entry format: {time, timestamp, level, server_id, message}
+    """
+    socketio.emit('system_log', {
+        'log': log_entry,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+
+
+def broadcast_system_logs_batch(logs):
+    """
+    Broadcast multiple system logs at once (for initial connection)
+    """
+    socketio.emit('system_logs_batch', {
+        'logs': logs,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+
+
+def ingest_agent_alert(server_id, message):
+    """
+    Write an agent-reported alert into the system log buffer and broadcast it.
+    Called from the /agent/report route so agent alerts appear in the System Log panel.
+    """
+    from config.settings import SERVERS
+    server_config = SERVERS.get(server_id, {})
+    server_name = server_config.get('name_cn', server_config.get('name', server_id))
+    short_msg = message[:100] + '...' if len(message) > 100 else message
+    log_entry = log_service.add_system_log('warning', server_id, f"{server_name}: {short_msg}")
+    broadcast_system_log(log_entry)
+
+
+@socketio.on('request_system_logs')
+def handle_system_logs_request(data=None):
+    """Handle request for system logs"""
+    count = data.get('count', 50) if data else 50
+    logs = log_service.get_system_logs(count)
+    emit('system_logs_batch', {
+        'logs': logs,
+        'timestamp': datetime.utcnow().isoformat()
+    })

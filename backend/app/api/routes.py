@@ -508,6 +508,10 @@ def agent_report():
         )
         db.session.add(alert)
 
+        # Also write agent alerts into the system log buffer for the System Log panel
+        from app.api.websocket import ingest_agent_alert
+        ingest_agent_alert(server_id, alert_data.get('message', ''))
+
     db.session.commit()
 
     # Broadcast status update via WebSocket

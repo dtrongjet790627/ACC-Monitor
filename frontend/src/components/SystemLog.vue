@@ -24,22 +24,48 @@
     </div>
 
     <!-- Log entries -->
-    <div class="log-entries" ref="logContainer">
-      <TransitionGroup name="log-entry">
+    <div class="log-entries" ref="logContainer"
+         @mouseenter="isHovering = true"
+         @mouseleave="isHovering = false">
+      <!-- Empty state when no logs -->
+      <div v-if="displayLogs.length === 0" class="empty-state">
+        <span class="empty-icon">&gt;_</span>
+        <span class="empty-text">Awaiting system connection...</span>
+        <span class="empty-cursor"></span>
+      </div>
+      <template v-else>
         <div
           v-for="(log, index) in displayLogs"
           :key="log.time + '-' + log.message"
           class="log-entry"
-          :class="[log.level, { 'typing': index === 0 && isNewEntry }]"
+          :class="[log.level, { 'typing': index === 0 && isNewEntry, 'expanded': hoveredIndex === index }]"
+          @mouseenter="hoveredIndex = index"
+          @mouseleave="hoveredIndex = -1"
         >
           <span class="log-line-number">{{ String(index + 1).padStart(2, '0') }}</span>
           <span class="log-time">{{ log.time }}</span>
           <span class="log-level" :class="log.level">[{{ log.level.toUpperCase() }}]</span>
           <span class="log-message">
-            <span class="message-text" :class="{ 'typewriter': index === 0 && isNewEntry }">{{ log.message }}</span>
+            <span class="message-text">{{ getDisplayMessage(log, index) }}</span>
+            <span v-if="shouldShowCursor(log, index)" class="typewriter-cursor"></span>
           </span>
+          <!-- Expanded detail panel on hover -->
+          <div v-if="hoveredIndex === index" class="log-detail">
+            <div class="detail-row">
+              <span class="detail-label">TIME:</span>
+              <span class="detail-value">{{ log.timestamp || log.time }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">SOURCE:</span>
+              <span class="detail-value">{{ log.server_id }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">MESSAGE:</span>
+              <span class="detail-value full-message">{{ log.message }}</span>
+            </div>
+          </div>
         </div>
-      </TransitionGroup>
+      </template>
     </div>
 
     <!-- Command line -->
@@ -54,7 +80,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, nextTick, onUnmounted } from 'vue'
 
 const props = defineProps({
   logs: {
@@ -63,7 +89,7 @@ const props = defineProps({
   },
   maxEntries: {
     type: Number,
-    default: 8
+    default: 25
   }
 })
 
@@ -71,34 +97,102 @@ const logContainer = ref(null)
 const isNewEntry = ref(false)
 const previousLogCount = ref(0)
 
-// Default demo logs if none provided
-const defaultLogs = [
-  { time: '13:46:01', level: 'critical', message: 'IPS_EPS: Connection timeout detected' },
-  { time: '13:45:30', level: 'warning', message: 'SMT_EPS: High CPU usage (78%)' },
-  { time: '13:45:00', level: 'info', message: 'DP_EPS: Service health check passed' },
-  { time: '13:44:30', level: 'info', message: 'System monitoring initialized' },
-  { time: '13:44:00', level: 'info', message: 'All services synchronized' },
-  { time: '13:43:30', level: 'warning', message: 'C_EPS: Memory usage at 72%' },
-  { time: '13:43:00', level: 'info', message: 'Database connection pool healthy' },
-  { time: '13:42:30', level: 'info', message: 'Backup process completed' }
-]
+// Hover expand state - tracks which log entry is hovered
+const hoveredIndex = ref(-1)
+
+// Auto-scroll state
+const isHovering = ref(false)
+let scrollInterval = null
+
+// Typewriter effect state
+const typewriterText = ref('')
+const typewriterIndex = ref(0)
+const isTyping = ref(false)
+const currentTypingLog = ref(null)
+let typewriterInterval = null
 
 const displayLogs = computed(() => {
-  const logs = props.logs.length > 0 ? props.logs : defaultLogs
-  return logs.slice(0, props.maxEntries)
+  return props.logs.slice(0, props.maxEntries)
 })
+
+// Auto-scroll: smoothly scroll down, loop back to top when reaching bottom
+function startAutoScroll() {
+  scrollInterval = setInterval(() => {
+    if (!isHovering.value && logContainer.value) {
+      const el = logContainer.value
+      const maxScroll = el.scrollHeight - el.clientHeight
+      if (maxScroll > 0) {
+        if (el.scrollTop >= maxScroll) {
+          // Reached bottom, reset to top
+          el.scrollTop = 0
+        } else {
+          el.scrollTop += 2
+        }
+      }
+    }
+  }, 100) // 100ms interval, 2px per step = ~20px/s scroll speed (same visual speed)
+}
+
+function stopAutoScroll() {
+  if (scrollInterval) {
+    clearInterval(scrollInterval)
+    scrollInterval = null
+  }
+}
+
+// Start typewriter effect for a new message
+function startTypewriter(message) {
+  // Clear any existing interval
+  if (typewriterInterval) {
+    clearInterval(typewriterInterval)
+  }
+
+  typewriterText.value = ''
+  typewriterIndex.value = 0
+  isTyping.value = true
+
+  typewriterInterval = setInterval(() => {
+    if (typewriterIndex.value < message.length) {
+      typewriterText.value += message[typewriterIndex.value]
+      typewriterIndex.value++
+    } else {
+      clearInterval(typewriterInterval)
+      typewriterInterval = null
+      isTyping.value = false
+      currentTypingLog.value = null
+    }
+  }, 25) // 25ms per character for smooth effect
+}
 
 // Watch for new logs and trigger typing animation
 watch(() => props.logs.length, (newCount, oldCount) => {
-  if (newCount > oldCount) {
+  if (newCount > oldCount && props.logs.length > 0) {
+    const newestLog = props.logs[0]
     isNewEntry.value = true
-    // Reset typing state after animation completes
+    currentTypingLog.value = newestLog
+    startTypewriter(newestLog.message)
+
+    // Reset isNewEntry after animation completes
     setTimeout(() => {
       isNewEntry.value = false
-    }, 1500)
+    }, 2000)
   }
   previousLogCount.value = newCount
 })
+
+// Get display message for a log entry
+function getDisplayMessage(log, index) {
+  // If this is the first log and we're typing it, show typewriter text
+  if (index === 0 && isTyping.value && currentTypingLog.value === log) {
+    return typewriterText.value
+  }
+  return log.message
+}
+
+// Check if cursor should be shown
+function shouldShowCursor(log, index) {
+  return index === 0 && isTyping.value && currentTypingLog.value === log
+}
 
 // Auto-scroll to top when new logs arrive (since newest is at top)
 function scrollToTop() {
@@ -115,6 +209,14 @@ watch(displayLogs, () => {
 
 onMounted(() => {
   previousLogCount.value = props.logs.length
+  startAutoScroll()
+})
+
+onUnmounted(() => {
+  if (typewriterInterval) {
+    clearInterval(typewriterInterval)
+  }
+  stopAutoScroll()
 })
 </script>
 
@@ -135,21 +237,18 @@ $void-800: #12121a;
   display: flex;
   flex-direction: column;
   height: 100%;
-  // Semi-transparent background for matrix rain visibility
-  background: rgba(10, 10, 15, 0.70);
+  background: rgba(8, 10, 14, 0.92);
   border: 1px solid rgba($cyber-cyan, 0.4);
   border-radius: 8px;
   font-family: $font-mono;
   overflow: hidden;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 
   // Multi-layer neon glow - matching card style
   box-shadow:
-    0 0 5px rgba($cyber-cyan, 0.2),
-    0 0 10px rgba($cyber-cyan, 0.1),
-    0 4px 20px rgba(0, 0, 0, 0.5),
-    inset 0 0 30px rgba(0, 0, 0, 0.2);
+    0 0 8px rgba($cyber-cyan, 0.25),
+    0 0 15px rgba($cyber-cyan, 0.12),
+    0 4px 20px rgba(0, 0, 0, 0.45),
+    inset 0 0 25px rgba(0, 0, 0, 0.15);
 }
 
 // Corner Decorations - Cyberpunk Style
@@ -190,7 +289,7 @@ $void-800: #12121a;
   }
 }
 
-// CRT Scanlines
+// CRT Scanlines - subtle static texture
 .scanlines {
   position: absolute;
   top: 0;
@@ -201,12 +300,12 @@ $void-800: #12121a;
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 0, 0, 0.08) 2px,
-    rgba(0, 0, 0, 0.08) 4px
+    rgba(0, 0, 0, 0.04) 2px,
+    rgba(0, 0, 0, 0.04) 4px
   );
   pointer-events: none;
   z-index: 10;
-  opacity: 0.5;
+  opacity: 0.3;
 }
 
 .log-header {
@@ -310,51 +409,34 @@ $void-800: #12121a;
   }
 }
 
-// Transition group animations
-.log-entry-enter-active {
-  animation: slideIn 0.4s ease-out;
-}
-
-.log-entry-leave-active {
-  animation: fadeOut 0.3s ease-out;
-}
-
-.log-entry-move {
-  transition: transform 0.3s ease;
-}
-
-@keyframes slideIn {
-  0% {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes fadeOut {
-  0% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
 .log-entry {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-  padding: 8px 16px;
+  padding: 6px 16px;
   font-size: 11px;
   line-height: 1.4;
   border-left: 2px solid transparent;
-  transition: background 0.2s ease;
+  transition: background 0.2s ease, max-height 0.3s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  position: relative;
 
   &:hover {
     background: rgba($cyber-cyan, 0.05);
+  }
+
+  // Expanded state on hover - allow wrapping and show detail panel
+  &.expanded {
+    background: rgba($cyber-cyan, 0.08);
+    white-space: normal;
+
+    .log-message .message-text {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: unset;
+    }
   }
 
   &.critical {
@@ -364,6 +446,10 @@ $void-800: #12121a;
     &.typing {
       animation: criticalPulse 0.5s ease-in-out 3;
     }
+
+    &.expanded {
+      background: rgba($cyber-red, 0.08);
+    }
   }
 
   &.warning {
@@ -372,6 +458,10 @@ $void-800: #12121a;
 
     &.typing {
       animation: warningPulse 0.5s ease-in-out 2;
+    }
+
+    &.expanded {
+      background: rgba($cyber-yellow, 0.06);
     }
   }
 
@@ -418,36 +508,78 @@ $void-800: #12121a;
   .log-message {
     color: rgba(255, 255, 255, 0.85);
     flex: 1;
-    word-break: break-word;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    min-width: 0;
 
     .message-text {
-      display: inline;
+      display: inline-block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+    }
 
-      &.typewriter {
-        animation: typewriter 1s steps(40, end);
-        overflow: hidden;
-        white-space: nowrap;
-        display: inline-block;
-        max-width: 100%;
-      }
+    .typewriter-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: $cyber-cyan;
+      margin-left: 2px;
+      flex-shrink: 0;
+      animation: cursorBlink 0.6s step-end infinite;
+      box-shadow: 0 0 8px $cyber-cyan;
+    }
+  }
+
+  // Expanded detail panel
+  .log-detail {
+    width: 100%;
+    padding: 6px 0 4px 30px;
+    animation: detailFadeIn 0.2s ease-out;
+
+    .detail-row {
+      display: flex;
+      gap: 8px;
+      font-size: 10px;
+      padding: 2px 0;
+    }
+
+    .detail-label {
+      color: rgba($cyber-cyan, 0.5);
+      min-width: 60px;
+      flex-shrink: 0;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-value {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .full-message {
+      white-space: pre-wrap;
+      word-break: break-all;
     }
   }
 }
 
-// Typewriter animation
-@keyframes typewriter {
+@keyframes detailFadeIn {
   0% {
-    max-width: 0;
-    opacity: 0.7;
-  }
-  10% {
-    opacity: 1;
+    opacity: 0;
+    transform: translateY(-4px);
   }
   100% {
-    max-width: 100%;
     opacity: 1;
+    transform: translateY(0);
   }
+}
+
+// Typewriter cursor blink animation
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
 }
 
 // Pulse animations for alerts
@@ -470,6 +602,39 @@ $void-800: #12121a;
   50% {
     background: rgba($cyber-yellow, 0.1);
     border-left-color: lighten($cyber-yellow, 10%);
+  }
+}
+
+// Empty state styling - cyberpunk feel
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 24px 16px;
+  font-family: $font-mono;
+
+  .empty-icon {
+    color: rgba($cyber-cyan, 0.5);
+    font-size: 14px;
+    text-shadow: 0 0 8px rgba($cyber-cyan, 0.3);
+  }
+
+  .empty-text {
+    color: rgba($cyber-cyan, 0.45);
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    text-shadow: 0 0 6px rgba($cyber-cyan, 0.2);
+  }
+
+  .empty-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: rgba($cyber-cyan, 0.5);
+    animation: cursorBlink 1s step-end infinite;
+    box-shadow: 0 0 6px rgba($cyber-cyan, 0.3);
   }
 }
 
@@ -512,10 +677,5 @@ $void-800: #12121a;
     box-shadow: 0 0 10px $cyber-cyan;
     animation: cursorBlink 1s step-end infinite;
   }
-}
-
-@keyframes cursorBlink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
 }
 </style>

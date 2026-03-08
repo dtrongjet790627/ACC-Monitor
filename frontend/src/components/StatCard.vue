@@ -1,5 +1,5 @@
 <template>
-  <div class="stat-card" @click="handleClick">
+  <div class="stat-card" :class="{ 'crt-glitch': glitchActive, [`glitch-${glitchType}`]: glitchActive && glitchType }" @click="handleClick" ref="statCardRef">
     <!-- 全息投影叠加层 -->
     <div class="hologram-layer"></div>
 
@@ -34,7 +34,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 
 const props = defineProps({
   value: {
@@ -60,6 +60,39 @@ const emit = defineEmits(['click'])
 
 const animatedValue = ref(0)
 const valueRef = ref(null)
+const statCardRef = ref(null)
+
+// ========================================
+// JS-driven sporadic CRT glitch effect
+// Each stat card instance runs its own independent timer
+// ========================================
+const glitchActive = ref(false)
+const glitchType = ref('')
+let glitchTimer = null
+let glitchEndTimer = null
+
+const glitchTypes = ['scan-down', 'scan-up', 'flicker', 'shift']
+
+function scheduleGlitch() {
+  // Random interval: 5-20 seconds between glitches
+  const delay = 5000 + Math.random() * 15000
+  glitchTimer = setTimeout(() => {
+    glitchType.value = glitchTypes[Math.floor(Math.random() * glitchTypes.length)]
+    glitchActive.value = true
+
+    const duration = 200 + Math.random() * 600
+    const el = statCardRef.value
+    if (el) {
+      el.style.setProperty('--glitch-duration', `${(duration / 1000).toFixed(2)}s`)
+    }
+
+    glitchEndTimer = setTimeout(() => {
+      glitchActive.value = false
+      glitchType.value = ''
+      scheduleGlitch()
+    }, duration)
+  }, delay)
+}
 
 const colorClass = computed(() => props.color)
 
@@ -90,6 +123,14 @@ function animateValue(start, end, duration) {
 
 onMounted(() => {
   animateValue(0, props.value, 1200)
+  // Start sporadic glitch effect with random initial delay (0-8s)
+  const initialDelay = Math.random() * 8000
+  glitchTimer = setTimeout(() => scheduleGlitch(), initialDelay)
+})
+
+onUnmounted(() => {
+  if (glitchTimer) clearTimeout(glitchTimer)
+  if (glitchEndTimer) clearTimeout(glitchEndTimer)
 })
 
 watch(() => props.value, (newVal, oldVal) => {
@@ -253,7 +294,7 @@ function handleClick() {
     }
   }
 
-  // 扫描线效果 - 统一绿色主题
+  // 扫描线效果 - JS-driven sporadic effect (no continuous animation)
   .scan-line {
     position: absolute;
     top: 0;
@@ -264,7 +305,7 @@ function handleClick() {
     transform: translateY(-100%);
     opacity: 0;
     will-change: transform, opacity;
-    animation: scanDown 3s ease-in-out infinite;
+    // No animation by default - controlled by JS glitch system
   }
 
   // 能量波纹 - 统一绿色主题
@@ -371,22 +412,85 @@ function handleClick() {
   }
 }
 
-// 扫描线动画
-@keyframes scanDown {
-  0%, 100% {
+// ============================================
+// Sporadic CRT Glitch Effects (JS-driven)
+// Only active when .crt-glitch class is present
+// ============================================
+.stat-card.crt-glitch {
+  .scan-line {
+    opacity: 1;
+  }
+
+  // Type 1: Scan line sweeps down
+  &.glitch-scan-down .scan-line {
+    animation: statGlitchScanDown var(--glitch-duration, 0.4s) linear forwards;
+  }
+
+  // Type 2: Scan line sweeps up
+  &.glitch-scan-up .scan-line {
+    animation: statGlitchScanUp var(--glitch-duration, 0.4s) linear forwards;
+  }
+
+  // Type 3: Brief signal flicker
+  &.glitch-flicker {
+    animation: statGlitchFlicker var(--glitch-duration, 0.4s) steps(3) forwards;
+  }
+
+  // Type 4: Horizontal displacement jitter
+  &.glitch-shift {
+    animation: statGlitchShift var(--glitch-duration, 0.4s) steps(4) forwards;
+  }
+}
+
+@keyframes statGlitchScanDown {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0.4;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(4000%);
+    opacity: 0;
+  }
+}
+
+@keyframes statGlitchScanUp {
+  0% {
+    transform: translateY(4000%);
+    opacity: 0.4;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
     transform: translateY(-100%);
     opacity: 0;
   }
-  10% {
-    opacity: 1;
-  }
-  50% {
-    transform: translateY(4000%);
-    opacity: 1;
-  }
-  60%, 100% {
-    opacity: 0;
-  }
+}
+
+@keyframes statGlitchFlicker {
+  0% { opacity: 1; }
+  15% { opacity: 0.6; }
+  30% { opacity: 0.9; }
+  45% { opacity: 0.5; }
+  60% { opacity: 0.85; }
+  75% { opacity: 0.55; }
+  90% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+@keyframes statGlitchShift {
+  0% { transform: translateX(0); }
+  12% { transform: translateX(-2px); }
+  25% { transform: translateX(3px); }
+  37% { transform: translateX(-1px); }
+  50% { transform: translateX(2px); }
+  62% { transform: translateX(-3px); }
+  75% { transform: translateX(1px); }
+  87% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
 }
 
 // 边框流光动画

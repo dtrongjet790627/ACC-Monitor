@@ -2,8 +2,9 @@
   <!-- CRT Monitor Container - Deep Optimized Version -->
   <div
     class="crt-monitor"
-    :class="[`status-${server.status}`]"
+    :class="[`status-${server.status}`, { 'crt-glitch': glitchActive, [`glitch-${glitchType}`]: glitchActive && glitchType }]"
     @click="handleClick"
+    ref="crtMonitorRef"
   >
     <!-- Monitor Back Shell (CRT Tube Housing) - Visible top arc -->
     <div class="monitor-back-shell">
@@ -187,7 +188,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   server: {
@@ -197,6 +198,44 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['click'])
+
+const crtMonitorRef = ref(null)
+
+// ========================================
+// JS-driven sporadic CRT glitch effect
+// Each card instance runs its own independent timer
+// ========================================
+const glitchActive = ref(false)
+const glitchType = ref('')
+let glitchTimer = null
+let glitchEndTimer = null
+
+const glitchTypes = ['scan-down', 'scan-up', 'flicker', 'shift']
+
+function scheduleGlitch() {
+  // Random interval: 3-10 seconds between glitches
+  const delay = 3000 + Math.random() * 7000
+  glitchTimer = setTimeout(() => {
+    // Pick a random glitch type
+    glitchType.value = glitchTypes[Math.floor(Math.random() * glitchTypes.length)]
+    glitchActive.value = true
+
+    // Effect lasts 300-1200ms
+    const duration = 300 + Math.random() * 900
+    // Set CSS variable for animation duration
+    const el = crtMonitorRef.value
+    if (el) {
+      el.style.setProperty('--glitch-duration', `${(duration / 1000).toFixed(2)}s`)
+    }
+
+    glitchEndTimer = setTimeout(() => {
+      glitchActive.value = false
+      glitchType.value = ''
+      scheduleGlitch() // Schedule next glitch
+    }, duration)
+  }, delay)
+}
+
 
 // Animated values for smooth transitions
 const animatedCpu = ref(0)
@@ -274,6 +313,16 @@ onMounted(() => {
   animatedMem.value = props.server.memoryUsage || 0
   animatedDisk.value = props.server.tablespaceUsage || 0
   animatedPing.value = props.server.ping || 0
+
+  // Start sporadic glitch effect with random initial delay (0-5s)
+  // This ensures all cards start at different times
+  const initialDelay = Math.random() * 5000
+  glitchTimer = setTimeout(() => scheduleGlitch(), initialDelay)
+})
+
+onUnmounted(() => {
+  if (glitchTimer) clearTimeout(glitchTimer)
+  if (glitchEndTimer) clearTimeout(glitchEndTimer)
 })
 
 const statusText = computed(() => {
@@ -368,6 +417,7 @@ $stand-color: #1a1a1a;
   flex-direction: column;
   cursor: pointer;
   transition: transform 0.3s ease;
+  contain: layout style paint;
 
   &:hover {
     transform: translateY(-4px);
@@ -495,27 +545,27 @@ $stand-color: #1a1a1a;
 }
 
 // ============================================
-// Outer Frame - Thick CRT Bezel (15-20px)
+// Outer Frame - Thick CRT Bezel (15-20px) - Semi-transparent for matrix rain
 // ============================================
 .monitor-outer-frame {
   flex: 1;
   display: flex;
   flex-direction: column;
   background: linear-gradient(160deg,
-    $monitor-frame-light 0%,
-    $monitor-frame-mid 15%,
-    $monitor-frame-dark 50%,
-    $monitor-frame-darkest 85%,
+    #2d2d2d 0%,
+    #252525 15%,
+    #1a1a1a 50%,
+    #141414 85%,
     #0f0f0f 100%
   );
   border-radius: 6px;
   padding: 14px 14px 8px 14px;
   position: relative;
   box-shadow:
-    0 0 8px rgba($cyber-cyan, 0.08),
-    0 8px 30px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+    0 0 10px rgba($cyber-cyan, 0.12),
+    0 8px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4);
   transition: box-shadow 0.3s ease;
 
   // Frame texture pattern (subtle)
@@ -653,7 +703,7 @@ $stand-color: #1a1a1a;
 }
 
 // ============================================
-// Inner Frame - Screen Housing
+// Inner Frame - Screen Housing - Semi-transparent
 // ============================================
 .monitor-inner-frame {
   flex: 1;
@@ -665,12 +715,12 @@ $stand-color: #1a1a1a;
   border-radius: 4px;
   padding: 4px;
   box-shadow:
-    inset 0 2px 6px rgba(0, 0, 0, 0.8),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+    inset 0 2px 6px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4);
   position: relative;
 }
 
-// Inner Bezel
+// Inner Bezel - Semi-transparent
 .inner-bezel {
   width: 100%;
   height: 100%;
@@ -681,21 +731,21 @@ $stand-color: #1a1a1a;
   border-radius: 3px;
   padding: 4px;
   box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.6),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+    inset 0 2px 4px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
-// Screen Area with CRT curvature simulation - semi-transparent for matrix rain
+// Screen Area with CRT curvature simulation
 .screen-area {
   width: 100%;
   height: 100%;
-  background: rgba(8, 10, 12, 0.85);
+  background: #050810;
   border-radius: 4px;
   position: relative;
   overflow: hidden;
   box-shadow:
-    inset 0 0 30px rgba(0, 0, 0, 0.5),
-    inset 0 0 60px rgba(0, 0, 0, 0.3);
+    inset 0 0 30px rgba(0, 0, 0, 0.4),
+    inset 0 0 60px rgba(0, 0, 0, 0.2);
 }
 
 // CRT Edge Vignette (curved screen effect)
@@ -747,7 +797,7 @@ $stand-color: #1a1a1a;
   z-index: 14;
 }
 
-// CRT Scanlines
+// CRT Scanlines - JS-driven sporadic effect (no continuous animation)
 .scanlines {
   position: absolute;
   top: 0;
@@ -764,8 +814,9 @@ $stand-color: #1a1a1a;
   background-size: 100% 4px;
   pointer-events: none;
   z-index: 10;
-  opacity: 0.8;
-  animation: scanline-scroll 8s linear infinite;
+  // Default: hidden, only visible during glitch
+  opacity: 0;
+  transition: opacity 0.05s;
 }
 
 // Phosphor Dot Pattern (RGB subpixel simulation)
@@ -790,9 +841,96 @@ $stand-color: #1a1a1a;
   opacity: 0.5;
 }
 
-@keyframes scanline-scroll {
-  0% { background-position: 0 0; }
-  100% { background-position: 0 100px; }
+// ============================================
+// Sporadic CRT Glitch Effects (JS-driven)
+// Only active when .crt-glitch class is present
+// ============================================
+
+// Base glitch state - scanlines become visible
+.crt-monitor.crt-glitch {
+  .scanlines {
+    opacity: 0.8;
+  }
+
+  // Type 1: Scan line sweeps down
+  &.glitch-scan-down .scanlines {
+    animation: glitchScanDown var(--glitch-duration, 0.4s) linear forwards;
+  }
+
+  // Type 2: Scan line sweeps up
+  &.glitch-scan-up .scanlines {
+    animation: glitchScanUp var(--glitch-duration, 0.4s) linear forwards;
+  }
+
+  // Type 3: Brief signal flicker (opacity jitter)
+  &.glitch-flicker {
+    animation: glitchFlicker var(--glitch-duration, 0.4s) steps(3) forwards;
+  }
+
+  // Type 4: Horizontal displacement jitter
+  &.glitch-shift .screen-area {
+    animation: glitchShift var(--glitch-duration, 0.4s) steps(4) forwards;
+  }
+}
+
+@keyframes glitchScanDown {
+  0% {
+    background-position: 0 0;
+    opacity: 0.5;
+    filter: drop-shadow(0 0 3px rgba(0, 255, 160, 0.4));
+  }
+  30% {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 6px rgba(0, 255, 160, 0.6));
+  }
+  100% {
+    background-position: 0 100px;
+    opacity: 0;
+    filter: drop-shadow(0 0 0 transparent);
+  }
+}
+
+@keyframes glitchScanUp {
+  0% {
+    background-position: 0 100px;
+    opacity: 0.5;
+    filter: drop-shadow(0 0 3px rgba(0, 255, 160, 0.4));
+  }
+  30% {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 6px rgba(0, 255, 160, 0.6));
+  }
+  100% {
+    background-position: 0 0;
+    opacity: 0;
+    filter: drop-shadow(0 0 0 transparent);
+  }
+}
+
+@keyframes glitchFlicker {
+  0% { opacity: 1; }
+  10% { opacity: 0.3; }
+  20% { opacity: 0.95; }
+  30% { opacity: 0.35; }
+  40% { opacity: 1; }
+  50% { opacity: 0.3; }
+  60% { opacity: 0.9; }
+  70% { opacity: 0.4; }
+  80% { opacity: 1; }
+  90% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+
+@keyframes glitchShift {
+  0% { transform: translateX(0); }
+  12% { transform: translateX(-4px); }
+  25% { transform: translateX(5px); }
+  37% { transform: translateX(-3px); }
+  50% { transform: translateX(4px); }
+  62% { transform: translateX(-5px); }
+  75% { transform: translateX(3px); }
+  87% { transform: translateX(-4px); }
+  100% { transform: translateX(0); }
 }
 
 // ============================================
@@ -906,6 +1044,7 @@ $stand-color: #1a1a1a;
   background: #222;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
   transition: all 0.3s ease;
+  will-change: opacity;
 
   &.power {
     background: $cyber-cyan;
@@ -917,7 +1056,7 @@ $stand-color: #1a1a1a;
     &.active {
       background: #ff6600;
       box-shadow: 0 0 4px #ff6600;
-      animation: led-flicker 0.1s ease-in-out infinite;
+      animation: led-flicker 0.5s ease-in-out infinite;
     }
   }
 
