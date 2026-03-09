@@ -38,7 +38,8 @@ class MonitorScheduler:
             trigger=IntervalTrigger(seconds=Config.PROCESS_CHECK_INTERVAL),
             id='check_processes',
             name='Check server processes',
-            replace_existing=True
+            replace_existing=True,
+            max_instances=2  # Allow overlap to avoid skipped checks
         )
 
         self.scheduler.add_job(
@@ -57,13 +58,15 @@ class MonitorScheduler:
             replace_existing=True
         )
 
-        # Add offline server probe job - runs more frequently to detect recovery faster
+        # Add offline server probe job - runs at 60s intervals to avoid
+        # probe-recovery-timeout death loop (was 15s, caused repeated SSH storms)
         self.scheduler.add_job(
             func=self._probe_offline_servers,
-            trigger=IntervalTrigger(seconds=15),  # Probe every 15 seconds
+            trigger=IntervalTrigger(seconds=60),  # Probe every 60 seconds
             id='probe_offline_servers',
             name='Probe offline servers for recovery',
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1  # Prevent overlap to avoid compounding SSH load
         )
 
         # Add periodic health check logging - shows system is actively monitoring
@@ -291,19 +294,25 @@ class MonitorScheduler:
 
     def _probe_offline_servers(self):
         """
-        Probe offline servers to detect recovery
-        This runs more frequently than process checks to enable faster recovery detection
+        Probe offline servers to detect recovery.
+        IMPORTANT: On successful probe, we only update the SSH fallback cache
+        to mark the server as 'available'.  We do NOT trigger a full status
+        collection here -- that was the root cause of the probe-recovery-timeout
+        death loop (probe succeeds -> full SSH collection -> times out -> marked
+        offline again -> probe fires again in 15s).
+        The next normal _check_processes cycle (or Agent report) will pick up
+        the recovered server and broadcast the real status.
         """
         with self.app.app_context():
             from app.services.monitor_service import MonitorService
             from app.services.log_service import LogService
             from app.services.agent_data_service import agent_data_service
-            from app.api.websocket import broadcast_server_status, broadcast_system_log
+            from app.api.websocket import broadcast_system_log
 
             monitor_service = MonitorService()
             log_service = LogService()
 
-            # Get list of offline servers
+            # Get list of offline servers (no Agent data AND not in last-good cache)
             offline_servers = []
             for server_id in SERVERS.keys():
                 if not agent_data_service.is_agent_online(server_id):
@@ -314,31 +323,33 @@ class MonitorScheduler:
 
             logger.info(f"[Scheduler] Probing {len(offline_servers)} offline servers")
 
-            # Probe each offline server
+            # Probe each offline server with a lightweight echo test
             for server_id in offline_servers:
                 try:
                     result = monitor_service.probe_offline_server(server_id)
 
                     if result.get('success'):
-                        # Server recovered! Get fresh status and broadcast
-                        logger.info(f"[Scheduler] Server {server_id} recovered - fetching fresh status")
+                        # Server is SSH-reachable again.
+                        # Only update SSH fallback cache -- do NOT call
+                        # _get_single_server_status() to avoid full collection.
+                        logger.info(f"[Scheduler] Server {server_id} SSH reachable - "
+                                    f"marking available, waiting for next poll cycle")
 
                         server_config = SERVERS[server_id]
                         server_name = server_config.get('name_cn', server_config['name'])
-                        status = monitor_service._get_single_server_status(server_id)
 
-                        # Broadcast updated status to all clients
-                        broadcast_server_status(status)
+                        # Reset failure count so next poll cycle will attempt SSH
+                        monitor_service._failure_counts[server_id] = 0
 
-                        # Add system log for server recovery
+                        # Add system log for recovery detection
                         log_entry = log_service.add_system_log(
                             'info',
                             server_id,
-                            f"{server_name}: Connection recovered"
+                            f"{server_name}: SSH connection recovered (awaiting next poll)"
                         )
                         broadcast_system_log(log_entry)
 
-                        # Log recovery event
+                        # Log recovery event to DB
                         from app.models import Alert
                         from app import db
 
@@ -346,7 +357,7 @@ class MonitorScheduler:
                             server_id=server_id,
                             level='info',
                             source='monitor',
-                            message=f"Server {server_config['name']} connection recovered"
+                            message=f"Server {server_config['name']} SSH connection recovered"
                         )
                         db.session.add(alert)
                         db.session.commit()

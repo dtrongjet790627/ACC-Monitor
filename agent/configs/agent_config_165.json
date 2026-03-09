@@ -1,0 +1,16 @@
+{
+  "monitor_url": "http://172.17.10.165:5004",
+  "report_interval": 30,
+  "server_id": "165",
+  "log_level": "INFO",
+  "acc_drive": "D",
+  "processes": ["Oracle"],
+  "services": [
+    {"service_name": "DT.TechTeam_WorkOrderHelper_py", "display_name": "WorkOrderHelper"},
+    {"service_name": "DT.TechTeam_Label_Inspection", "display_name": "LabelInspection"},
+    {"service_name": "DT.TechTeam_C-EPS_Label_Print", "display_name": "C-EPS LabelPrint"},
+    {"service_name": "DT.TechTeam_EAI_Log_Monitor", "display_name": "EAI LogMonitor"},
+    {"service_name": "ACC.LogReader.Sync", "display_name": "LogReader.Sync"},
+    {"service_name": "ACC.LogReader.Async", "display_name": "LogReader.Async"}
+  ]
+}

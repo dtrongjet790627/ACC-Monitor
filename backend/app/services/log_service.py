@@ -302,8 +302,7 @@ class LogService:
         except Exception as e:
             print(f"Error reading Linux logs: {e}")
             return ""
-        finally:
-            client.close()
+        # Note: Do NOT close client here - it's managed by the connection pool
 
     def scan_for_alerts(self, server_id: str, log_content: str = None) -> List[Dict]:
         """Scan log content for alert keywords"""

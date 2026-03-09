@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 
-const API_BASE = 'http://localhost:5004/api/oracle-ops'
+const API_BASE = '/api/oracle-ops'
 
 // Oracle database server configuration
 const ORACLE_SERVER_CONFIG = {

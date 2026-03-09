@@ -1,0 +1,13 @@
+{
+  "monitor_url": "http://172.17.10.165:5004",
+  "report_interval": 30,
+  "server_id": "160",
+  "log_level": "INFO",
+  "acc_drive": "D",
+  "processes": [],
+  "services": [
+    {"service_name": "hulu-workorder", "display_name": "hulu-workorder"},
+    {"service_name": "iPlant.Features.WorkOrderSyncService", "display_name": "WorkOrderSync"},
+    {"service_name": "redis", "display_name": "Redis"}
+  ]
+}

@@ -230,8 +230,18 @@ def get_restart_history():
 
 @api_bp.route('/databases', methods=['GET'])
 def get_databases():
-    """Get all databases status"""
+    """Get all databases status with filtered tablespace data"""
     databases = database_service.get_all_databases_status()
+
+    # Enrich with server config info
+    for db_item in databases:
+        server_id = db_item.get('server_id')
+        if server_id in SERVERS:
+            config = SERVERS[server_id]
+            db_item['server_name'] = config.get('name', '')
+            db_item['server_name_cn'] = config.get('name_cn', '')
+            db_item['server_ip'] = config.get('ip', '')
+
     return jsonify({
         'code': 200,
         'data': databases

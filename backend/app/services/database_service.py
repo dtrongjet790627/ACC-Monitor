@@ -19,6 +19,10 @@ except ImportError:
 class DatabaseService:
     """Service for Oracle database monitoring"""
 
+    # Tablespace names that should be excluded from display
+    # Only business data tablespaces and SYSTEM are shown
+    EXCLUDED_TABLESPACES = {'USERS', 'TEMP', 'SYSAUX', 'UNDOTBS1', 'UNDOTBS2', 'UNDOTBS'}
+
     # SQL queries for monitoring
     TABLESPACE_QUERY = """
         SELECT
@@ -193,13 +197,105 @@ class DatabaseService:
             'last_check': datetime.utcnow().isoformat()
         }
 
+    @classmethod
+    def is_business_tablespace(cls, ts_name: str) -> bool:
+        """
+        Check if a tablespace is a business data tablespace.
+        Business tablespaces: ACC_DATA, IPLANT_*_DATA, etc.
+        (names that do not match system keywords)
+        """
+        if not ts_name:
+            return False
+        name_upper = ts_name.upper()
+        # Exclude known system tablespaces
+        if name_upper in cls.EXCLUDED_TABLESPACES or name_upper == 'SYSTEM':
+            return False
+        if name_upper.startswith('UNDO'):
+            return False
+        return True
+
+    @classmethod
+    def is_system_tablespace(cls, ts_name: str) -> bool:
+        """Check if a tablespace is the SYSTEM tablespace"""
+        return ts_name and ts_name.upper() == 'SYSTEM'
+
+    @classmethod
+    def should_display_tablespace(cls, ts_name: str) -> bool:
+        """
+        Check if a tablespace should be displayed.
+        Only business data tablespaces and SYSTEM are displayed.
+        USERS, TEMP, SYSAUX, UNDOTBS etc. are filtered out.
+        """
+        return cls.is_business_tablespace(ts_name) or cls.is_system_tablespace(ts_name)
+
+    @classmethod
+    def filter_tablespaces(cls, all_tablespaces: List[Dict]) -> Dict:
+        """
+        Filter a list of tablespace dicts to show only business data
+        tablespaces and SYSTEM tablespace.
+        Returns a dict with business_tablespaces, primary_business,
+        system_tablespace, and filtered_count.
+        """
+        business_tablespaces = []
+        system_tablespace = None
+
+        for ts in all_tablespaces:
+            ts_name = ts.get('name', '')
+            if cls.is_system_tablespace(ts_name):
+                system_tablespace = ts
+            elif cls.is_business_tablespace(ts_name):
+                business_tablespaces.append(ts)
+
+        # Find the primary business tablespace (highest usage)
+        primary_business = None
+        if business_tablespaces:
+            primary_business = max(business_tablespaces, key=lambda t: t.get('used_percent', 0))
+
+        filtered_count = len(business_tablespaces) + (1 if system_tablespace else 0)
+
+        return {
+            'business_tablespaces': business_tablespaces,
+            'primary_business': primary_business,
+            'system_tablespace': system_tablespace,
+            'filtered_count': filtered_count
+        }
+
     def get_all_databases_status(self) -> List[Dict]:
-        """Get status of all monitored databases"""
+        """Get status of all monitored databases with filtered tablespace data"""
         results = []
 
         for server_id in ORACLE_CONFIGS.keys():
-            db_status = self.get_database_status(server_id)
-            results.append(db_status)
+            # Get raw tablespace data and connections (single query per server)
+            all_tablespaces = self.get_tablespace_status(server_id)
+            connections = self.get_connection_count(server_id)
+
+            # Filter tablespaces for display
+            filtered = self.filter_tablespaces(all_tablespaces)
+
+            # Determine overall status based on filtered tablespaces only
+            display_tablespaces = filtered['business_tablespaces'][:]
+            if filtered['system_tablespace']:
+                display_tablespaces.append(filtered['system_tablespace'])
+
+            status = 'normal'
+            for ts in display_tablespaces:
+                if ts['status'] == 'critical':
+                    status = 'critical'
+                    break
+                elif ts['status'] == 'warning' and status != 'critical':
+                    status = 'warning'
+
+            results.append({
+                'server_id': server_id,
+                'status': status,
+                'tablespaces': all_tablespaces,
+                'business_tablespaces': filtered['business_tablespaces'],
+                'primary_business': filtered['primary_business'],
+                'system_tablespace': filtered['system_tablespace'],
+                'filtered_tablespace_count': filtered['filtered_count'],
+                'connections': connections,
+                'last_check': datetime.utcnow().isoformat()
+            })
 
         return results
 

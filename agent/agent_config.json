@@ -1,0 +1,95 @@
+{
+  "monitor_url": "http://172.17.10.165:5004",
+  "report_interval": 30,
+  "server_id": "CHANGE_ME",
+
+  "_comment_server_configs": "Below are per-server config examples. Copy the matching block into a new agent_config.json on each server.",
+
+  "_example_153": {
+    "server_id": "153",
+    "acc_drive": "E",
+    "processes": ["Oracle"],
+    "services": [
+      {"service_name": "ACC.Server", "display_name": "ACC.Server"},
+      {"service_name": "ACC.MQ", "display_name": "ACC.MQ"},
+      {"service_name": "ACC.PackServer", "display_name": "Pack.Server"},
+      {"service_name": "ACC.LogReader", "display_name": "ACC.LogReader"},
+      {"service_name": "HULU.EAI.Kingdee.Gateway", "display_name": "HULU EAI Kingdee Gateway"}
+    ]
+  },
+
+  "_example_164": {
+    "server_id": "164",
+    "acc_drive": "E",
+    "processes": ["Oracle"],
+    "services": [
+      {"service_name": "ACC.Server", "display_name": "ACC.Server"},
+      {"service_name": "ACC.PackServer", "display_name": "Pack.Server"},
+      {"service_name": "ACC.MQ", "display_name": "ACC.MQ"}
+    ]
+  },
+
+  "_example_168": {
+    "server_id": "168",
+    "acc_drive": "D",
+    "processes": ["Oracle"],
+    "services": [
+      {"service_name": "ACC.Server", "display_name": "ACC.Server"},
+      {"service_name": "ACC.MQ", "display_name": "ACC.MQ"},
+      {"service_name": "ACC.PackServer", "display_name": "Pack.Server"},
+      {"service_name": "ACC.LogReader", "display_name": "LogReader"}
+    ]
+  },
+
+  "_example_193": {
+    "server_id": "193",
+    "acc_drive": "E",
+    "processes": ["Oracle"],
+    "services": [
+      {"service_name": "ACC.Server", "display_name": "ACC.Server"},
+      {"service_name": "ACC.MQ", "display_name": "ACC.MQ"},
+      {"service_name": "ACC.LogReader", "display_name": "LogReader"}
+    ]
+  },
+
+  "_example_194": {
+    "server_id": "194",
+    "acc_drive": "E",
+    "processes": ["Oracle"],
+    "services": [
+      {"service_name": "ACC.Server", "display_name": "ACC.Server"},
+      {"service_name": "ACC.MQ", "display_name": "ACC.MQ"},
+      {"service_name": "ACC.LogReader", "display_name": "LogReader"}
+    ]
+  },
+
+  "_example_160": {
+    "server_id": "160",
+    "acc_drive": "D",
+    "processes": [],
+    "services": [
+      {"service_name": "hulu-workorder", "display_name": "hulu-workorder"},
+      {"service_name": "iPlant.Features.WorkOrderSyncService", "display_name": "WorkOrderSync"},
+      {"service_name": "redis", "display_name": "Redis"}
+    ]
+  },
+
+  "_example_165": {
+    "server_id": "165",
+    "acc_drive": "D",
+    "processes": ["Oracle"],
+    "services": [
+      {"service_name": "DT.TechTeam_WorkOrderHelper_py", "display_name": "WorkOrderHelper"},
+      {"service_name": "DT.TechTeam_Label_Inspection", "display_name": "LabelInspection"},
+      {"service_name": "DT.TechTeam_C-EPS_Label_Print", "display_name": "C-EPS LabelPrint"},
+      {"service_name": "DT.TechTeam_EAI_Log_Monitor", "display_name": "EAI LogMonitor"},
+      {"service_name": "ACC.LogReader.Sync", "display_name": "LogReader.Sync"},
+      {"service_name": "ACC.LogReader.Async", "display_name": "LogReader.Async"}
+    ]
+  },
+
+  "_example_163_linux": {
+    "server_id": "163",
+    "containers": ["hulu-eai", "redis"]
+  }
+}

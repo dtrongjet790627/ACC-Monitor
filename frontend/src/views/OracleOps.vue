@@ -66,26 +66,53 @@
           </div>
         </div>
 
-        <!-- Tablespace gauge -->
+        <!-- Tablespace gauges -->
         <div class="gauge-section">
-          <div class="gauge-ring">
-            <svg viewBox="0 0 100 100" class="gauge-svg">
-              <circle cx="50" cy="50" r="42" class="gauge-bg" />
-              <circle
-                cx="50" cy="50" r="42"
-                class="gauge-fill"
-                :class="getGaugeClass(server.max_tablespace_usage)"
-                :style="{ strokeDashoffset: getGaugeOffset(server.max_tablespace_usage) }"
-              />
-            </svg>
-            <div class="gauge-value">
-              <span class="gauge-number">{{ Math.round(server.max_tablespace_usage || 0) }}</span>
-              <span class="gauge-unit">%</span>
+          <!-- Business data gauge (green) -->
+          <div class="gauge-item">
+            <div class="gauge-ring">
+              <svg viewBox="0 0 100 100" class="gauge-svg">
+                <circle cx="50" cy="50" r="42" class="gauge-bg" />
+                <circle
+                  cx="50" cy="50" r="42"
+                  class="gauge-fill"
+                  :class="getGaugeClass(server.max_tablespace_usage)"
+                  :style="{ strokeDashoffset: getGaugeOffset(server.max_tablespace_usage) }"
+                />
+              </svg>
+              <div class="gauge-value">
+                <span class="gauge-number">{{ Math.round(server.max_tablespace_usage || 0) }}</span>
+                <span class="gauge-unit">%</span>
+              </div>
+            </div>
+            <div class="gauge-label">
+              <div class="ts-name">{{ server.max_tablespace_name || 'N/A' }}</div>
+              <div class="ts-sub" v-if="server.current_file_pct != null">CURRENT FILE</div>
             </div>
           </div>
-          <div class="gauge-label">
-            <div class="ts-name">{{ server.max_tablespace_name || 'N/A' }}</div>
-            <div class="ts-sub" v-if="server.current_file_pct != null">CURRENT FILE</div>
+          <!-- SYSTEM tablespace gauge (cyan) -->
+          <div class="gauge-item" v-if="server.system_tablespace">
+            <div class="gauge-ring">
+              <svg viewBox="0 0 100 100" class="gauge-svg">
+                <circle cx="50" cy="50" r="42" class="gauge-bg gauge-bg-cyan" />
+                <circle
+                  cx="50" cy="50" r="42"
+                  class="gauge-fill"
+                  :class="getSystemGaugeClass(server.system_tablespace.usage_pct)"
+                  :style="{ strokeDashoffset: getGaugeOffset(server.system_tablespace.usage_pct) }"
+                />
+              </svg>
+              <div class="gauge-value">
+                <span class="gauge-number">{{ Math.round(server.system_tablespace.usage_pct || 0) }}</span>
+                <span class="gauge-unit">%</span>
+              </div>
+            </div>
+            <div class="gauge-label">
+              <div class="ts-name ts-name-cyan">SYSTEM</div>
+            </div>
+          </div>
+          <!-- Tablespace count -->
+          <div class="gauge-count">
             <div class="ts-count">{{ server.tablespace_count }} tablespaces</div>
           </div>
         </div>
@@ -180,6 +207,12 @@ function getGaugeClass(pct) {
   if (pct >= 95) return 'critical'
   if (pct >= 85) return 'warning'
   return 'normal'
+}
+
+function getSystemGaugeClass(pct) {
+  if (pct >= 95) return 'critical'
+  if (pct >= 85) return 'warning'
+  return 'system'
 }
 
 function getBackupClass(status) {
@@ -536,14 +569,22 @@ onUnmounted(() => {
 .gauge-section {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   margin-bottom: 14px;
+}
+
+.gauge-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
 }
 
 .gauge-ring {
   position: relative;
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   flex-shrink: 0;
 }
 
@@ -557,6 +598,10 @@ onUnmounted(() => {
   fill: none;
   stroke: rgba($neon-green, 0.08);
   stroke-width: 6;
+
+  &.gauge-bg-cyan {
+    stroke: rgba($neon-cyan, 0.08);
+  }
 }
 
 .gauge-fill {
@@ -567,6 +612,7 @@ onUnmounted(() => {
   transition: stroke-dashoffset 1s ease;
 
   &.normal { stroke: $neon-green; filter: drop-shadow(0 0 4px rgba($neon-green, 0.5)); }
+  &.system { stroke: $neon-cyan; filter: drop-shadow(0 0 4px rgba($neon-cyan, 0.5)); }
   &.warning { stroke: $neon-orange; filter: drop-shadow(0 0 4px rgba($neon-orange, 0.5)); }
   &.critical { stroke: $neon-red; filter: drop-shadow(0 0 4px rgba($neon-red, 0.5)); }
 }
@@ -580,7 +626,7 @@ onUnmounted(() => {
 
   .gauge-number {
     font-family: $font-terminal;
-    font-size: 20px;
+    font-size: 18px;
     color: $text-white;
     text-shadow: 0 0 10px rgba($neon-green, 0.5);
   }
@@ -594,12 +640,19 @@ onUnmounted(() => {
 }
 
 .gauge-label {
+  text-align: center;
+
   .ts-name {
     font-family: $font-mono;
-    font-size: 11px;
+    font-size: 10px;
     color: $neon-green;
     letter-spacing: 1px;
     word-break: break-all;
+    line-height: 1.2;
+
+    &.ts-name-cyan {
+      color: $neon-cyan;
+    }
   }
 
   .ts-sub {
@@ -610,12 +663,18 @@ onUnmounted(() => {
     margin-top: 1px;
     opacity: 0.8;
   }
+}
+
+.gauge-count {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
 
   .ts-count {
     font-family: $font-mono;
     font-size: 10px;
     color: $text-secondary;
-    margin-top: 2px;
+    white-space: nowrap;
   }
 }
 

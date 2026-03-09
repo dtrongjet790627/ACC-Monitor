@@ -171,8 +171,7 @@ class RestartService:
         except Exception as e:
             print(f"Error restarting Linux process: {e}")
             return False
-        finally:
-            client.close()
+        # Note: Do NOT close client here - it's managed by the connection pool
 
     def check_and_restart_all(self) -> list:
         """Check all processes and restart stopped ones"""

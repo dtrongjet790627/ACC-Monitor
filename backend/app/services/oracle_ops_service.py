@@ -153,6 +153,8 @@ class OracleOpsService:
                 'latest_backup_time': None,
                 'recent_alerts_count': 0,
                 'last_report_time': None,
+                # SYSTEM tablespace data
+                'system_tablespace': None,
             }
 
             # Get the latest tablespace data for this server
@@ -169,7 +171,28 @@ class OracleOpsService:
 
                 # Filter to only the most recent collection batch
                 recent_ts = [t for t in latest_ts if t.collected_at == latest_time]
-                server_data['tablespace_count'] = len(recent_ts)
+
+                # Count only business-relevant tablespaces (exclude USERS, TEMP, SYSAUX, UNDOTBS*)
+                relevant_ts = [
+                    t for t in recent_ts
+                    if t.tablespace_name and t.tablespace_name.upper() not in self._EXCLUDED_FROM_COUNT
+                    and not t.tablespace_name.upper().startswith('UNDOTBS')
+                ]
+                server_data['tablespace_count'] = len(relevant_ts)
+
+                # Extract SYSTEM tablespace data
+                system_ts_list = [
+                    t for t in recent_ts
+                    if t.tablespace_name and t.tablespace_name.upper() == 'SYSTEM'
+                ]
+                if system_ts_list:
+                    sys_ts = system_ts_list[0]
+                    server_data['system_tablespace'] = {
+                        'tablespace_name': sys_ts.tablespace_name,
+                        'usage_pct': sys_ts.usage_pct or 0,
+                        'used_mb': sys_ts.used_mb,
+                        'max_mb': sys_ts.max_mb,
+                    }
 
                 # Find the featured tablespace: prioritize business data tablespaces
                 # Business tablespace rules:
@@ -446,6 +469,9 @@ class OracleOpsService:
 
     # System/non-business tablespaces that should be excluded from featured display
     _EXCLUDED_TABLESPACES = {'SYSAUX', 'TEMP', 'UNDOTBS1', 'UNDOTBS2', 'UNDO'}
+
+    # Tablespaces excluded from overview count (not business-relevant)
+    _EXCLUDED_FROM_COUNT = {'USERS', 'TEMP', 'SYSAUX', 'UNDOTBS1', 'UNDOTBS2', 'UNDO'}
 
     @classmethod
     def _select_featured_tablespace(cls, tablespace_list):
