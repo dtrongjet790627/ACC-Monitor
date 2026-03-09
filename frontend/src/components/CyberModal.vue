@@ -2,7 +2,7 @@
   <Teleport to="body">
     <Transition name="modal">
       <div v-if="modelValue" class="cyber-modal-overlay" @click.self="handleClose">
-        <div class="cyber-modal-content" :style="{ width: width }">
+        <div class="cyber-modal-content" :style="{ width: width, ...(height ? { height: height, maxHeight: height, display: 'flex', flexDirection: 'column' } : {}) }">
           <!-- 扫描线效果 -->
           <div class="scan-line"></div>
 
@@ -21,7 +21,7 @@
           </div>
 
           <!-- 内容区 -->
-          <div class="cyber-modal-body">
+          <div class="cyber-modal-body" :style="height ? { maxHeight: 'none', overflow: 'hidden', flex: '1' } : {}">
             <slot></slot>
           </div>
 
@@ -59,6 +59,10 @@ const props = defineProps({
   showFooter: {
     type: Boolean,
     default: true
+  },
+  height: {
+    type: String,
+    default: ''
   },
   closeOnClickOverlay: {
     type: Boolean,

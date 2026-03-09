@@ -1,19 +1,26 @@
 <template>
-  <div class="databases-page">
-    <!-- Page Header -->
-    <header class="page-header">
-      <div class="header-left">
+  <div class="dashboard-container">
+    <!-- Top Status Bar -->
+    <header class="top-status-bar">
+      <div class="status-left">
         <button class="back-btn" @click="$router.push('/')">
           <span class="bracket">[</span>
           <span class="arrow">&lt;</span>
           <span class="bracket">]</span>
         </button>
-        <div class="page-title">
+        <div class="system-title">
+          <span class="title-bracket">[</span>
           <span class="title-icon">&#9671;</span>
-          <span class="title-text">DATABASE MONITORING</span>
+          <span class="title-text">DATABASE MONITOR</span>
+          <span class="title-icon">&#9671;</span>
+          <span class="title-bracket">]</span>
         </div>
         <div class="status-group">
-          <div class="status-item normal">
+          <div class="status-item">
+            <span class="stat-label">TOTAL</span>
+            <span class="stat-value">{{ databases.length }}</span>
+          </div>
+          <div class="status-item online">
             <span class="stat-label">NORMAL</span>
             <span class="stat-value">{{ normalCount }}</span>
           </div>
@@ -27,7 +34,17 @@
           </div>
         </div>
       </div>
-      <div class="header-right">
+      <div class="status-center">
+        <div class="realtime-indicator">
+          <span class="indicator-dot" :class="{ active: !loading }"></span>
+          <span class="indicator-text">{{ loading ? 'SCANNING' : 'LIVE' }}</span>
+        </div>
+      </div>
+      <div class="status-right">
+        <div class="refresh-info">
+          <span class="refresh-label">INTERVAL:</span>
+          <span class="refresh-value">60s</span>
+        </div>
         <button class="refresh-btn" @click="fetchDatabases" :disabled="loading">
           <span class="bracket">[</span>
           <span :class="{ 'spin': loading }">&#8635;</span>
@@ -36,125 +53,53 @@
       </div>
     </header>
 
-    <!-- Database Cards Grid -->
-    <div class="databases-grid">
-      <div
-        v-for="dbItem in databases"
-        :key="dbItem.server_id"
-        class="database-card"
-        :class="[`status-${dbItem.status}`]"
-      >
-        <!-- Card Header -->
-        <div class="card-header">
-          <div class="server-indicator" :class="dbItem.status"></div>
-          <div class="server-info">
-            <div class="server-name">{{ dbItem.server_name_cn || dbItem.server_id }}_DB</div>
-            <div class="server-ip">{{ dbItem.server_ip }}</div>
+    <!-- Main Content Area -->
+    <div class="main-content">
+      <!-- Left: Database Cards Grid - Server Rack Cabinet -->
+      <div class="servers-section">
+        <!-- Cabinet frame decorations -->
+        <div class="cabinet-frame">
+          <div class="cabinet-top">
+            <div class="handle-left"></div>
+            <div class="cabinet-label">RACK UNIT // DB-MONITOR</div>
+            <div class="handle-right"></div>
           </div>
-          <div class="status-badge" :class="dbItem.status">
-            {{ getStatusText(dbItem.status) }}
+          <div class="cabinet-rail-left">
+            <div class="rail-led" :class="{ active: !loading }"></div>
+            <div class="rail-led warning" :class="{ active: warningCount > 0 }"></div>
+            <div class="rail-led error" :class="{ active: criticalCount > 0 }"></div>
+            <div class="rail-screw"></div>
+            <div class="rail-screw"></div>
+          </div>
+          <div class="cabinet-rail-right">
+            <div class="vent-slots">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div class="rail-screw"></div>
+            <div class="rail-screw"></div>
           </div>
         </div>
+        <!-- Database cards grid -->
+        <div class="servers-grid">
+          <DatabaseCardCompact
+            v-for="dbItem in databases"
+            :key="dbItem.server_id"
+            :database="dbItem"
+          />
+        </div>
+      </div>
 
-        <!-- Tablespace Gauges Section -->
-        <div class="gauges-section">
-          <h4 class="section-label">TABLESPACE USAGE</h4>
-          <div class="gauges-row">
-            <!-- Business Data Tablespace Gauge -->
-            <div class="gauge-item" v-if="dbItem.primary_business">
-              <div class="gauge-ring">
-                <svg viewBox="0 0 100 100" class="gauge-svg">
-                  <circle cx="50" cy="50" r="42" class="gauge-bg" />
-                  <circle
-                    cx="50" cy="50" r="42"
-                    class="gauge-fill"
-                    :class="getGaugeClass(dbItem.primary_business.used_percent)"
-                    :style="{ strokeDashoffset: getGaugeOffset(dbItem.primary_business.used_percent) }"
-                  />
-                </svg>
-                <div class="gauge-value">
-                  <span class="gauge-number">{{ Math.round(dbItem.primary_business.used_percent || 0) }}</span>
-                  <span class="gauge-unit">%</span>
-                </div>
-              </div>
-              <div class="gauge-label">
-                <div class="ts-name">{{ dbItem.primary_business.name }}</div>
-                <div class="ts-type business">BUSINESS DATA</div>
-              </div>
-            </div>
-
-            <!-- No Business Tablespace Fallback -->
-            <div class="gauge-item gauge-empty" v-else>
-              <div class="gauge-ring">
-                <svg viewBox="0 0 100 100" class="gauge-svg">
-                  <circle cx="50" cy="50" r="42" class="gauge-bg" />
-                </svg>
-                <div class="gauge-value">
-                  <span class="gauge-number empty">--</span>
-                </div>
-              </div>
-              <div class="gauge-label">
-                <div class="ts-name empty">N/A</div>
-                <div class="ts-type business">BUSINESS DATA</div>
-              </div>
-            </div>
-
-            <!-- SYSTEM Tablespace Gauge -->
-            <div class="gauge-item" v-if="dbItem.system_tablespace">
-              <div class="gauge-ring">
-                <svg viewBox="0 0 100 100" class="gauge-svg">
-                  <circle cx="50" cy="50" r="42" class="gauge-bg" />
-                  <circle
-                    cx="50" cy="50" r="42"
-                    class="gauge-fill"
-                    :class="getGaugeClass(dbItem.system_tablespace.used_percent)"
-                    :style="{ strokeDashoffset: getGaugeOffset(dbItem.system_tablespace.used_percent) }"
-                  />
-                </svg>
-                <div class="gauge-value">
-                  <span class="gauge-number">{{ Math.round(dbItem.system_tablespace.used_percent || 0) }}</span>
-                  <span class="gauge-unit">%</span>
-                </div>
-              </div>
-              <div class="gauge-label">
-                <div class="ts-name system">SYSTEM</div>
-                <div class="ts-type system">SYSTEM SPACE</div>
-              </div>
-            </div>
-
-            <!-- No SYSTEM Tablespace Fallback -->
-            <div class="gauge-item gauge-empty" v-else>
-              <div class="gauge-ring">
-                <svg viewBox="0 0 100 100" class="gauge-svg">
-                  <circle cx="50" cy="50" r="42" class="gauge-bg" />
-                </svg>
-                <div class="gauge-value">
-                  <span class="gauge-number empty">--</span>
-                </div>
-              </div>
-              <div class="gauge-label">
-                <div class="ts-name empty">N/A</div>
-                <div class="ts-type system">SYSTEM SPACE</div>
-              </div>
-            </div>
-          </div>
-          <div class="ts-count">{{ dbItem.filtered_tablespace_count || 0 }} tablespaces monitored</div>
+      <!-- Right: Guardian Panel -->
+      <div class="guardian-section">
+        <!-- Pixel Face -->
+        <div class="face-panel">
+          <PixelFace :is-online="!loading" />
         </div>
 
-        <!-- Connection Metrics -->
-        <div class="db-metrics">
-          <div class="metric">
-            <span class="metric-label">CONNECTIONS</span>
-            <span class="metric-value">{{ dbItem.connections?.total_connections || 0 }}</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">ACTIVE</span>
-            <span class="metric-value">{{ dbItem.connections?.active_connections || 0 }}</span>
-          </div>
+        <!-- Database Alert Log -->
+        <div class="log-panel">
+          <DatabaseLog :alerts="alertsList" :max-entries="30" />
         </div>
-
-        <!-- Card Scanline Effect -->
-        <div class="card-scanline"></div>
       </div>
     </div>
 
@@ -168,31 +113,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
+import DatabaseCardCompact from '@/components/DatabaseCardCompact.vue'
+import PixelFace from '@/components/PixelFace.vue'
+import DatabaseLog from '@/components/DatabaseLog.vue'
 
 const API_BASE = '/api'
 const databases = ref([])
+const alertsList = ref([])
 const loading = ref(false)
 let refreshInterval = null
-
-// Gauge calculations (SVG circle circumference = 2 * PI * 42 = 263.89)
-const CIRCUMFERENCE = 2 * Math.PI * 42
-
-function getGaugeOffset(pct) {
-  const p = Math.min(Math.max(pct || 0, 0), 100)
-  return CIRCUMFERENCE - (p / 100) * CIRCUMFERENCE
-}
-
-function getGaugeClass(pct) {
-  if (pct >= 95) return 'critical'
-  if (pct >= 85) return 'warning'
-  return 'normal'
-}
-
-function getStatusText(status) {
-  if (status === 'critical') return 'CRITICAL'
-  if (status === 'warning') return 'WARNING'
-  return 'NORMAL'
-}
 
 // Computed counts
 const normalCount = computed(() => databases.value.filter(d => d.status === 'normal').length)
@@ -214,9 +143,28 @@ async function fetchDatabases() {
   }
 }
 
+// Fetch database alerts
+async function fetchAlerts() {
+  try {
+    const response = await axios.get(`${API_BASE}/oracle-ops/alerts`, {
+      params: { page: 1, page_size: 50 },
+      timeout: 30000
+    })
+    if (response.data && response.data.data && response.data.data.records) {
+      alertsList.value = response.data.data.records
+    }
+  } catch (error) {
+    console.error('[Databases] Failed to fetch alerts:', error)
+  }
+}
+
 onMounted(() => {
   fetchDatabases()
-  refreshInterval = setInterval(fetchDatabases, 60000) // Refresh every 60s
+  fetchAlerts()
+  refreshInterval = setInterval(() => {
+    fetchDatabases()
+    fetchAlerts()
+  }, 60000)
 })
 
 onUnmounted(() => {
@@ -227,123 +175,225 @@ onUnmounted(() => {
 <style lang="scss" scoped>
 @import '@/styles/variables.scss';
 
-.databases-page {
+// Cybercore Color System
+$cyber-cyan: #00d4aa;
+$cyber-cyan-glow: #00ffcc;
+$cyber-yellow: #ffcc00;
+$cyber-red: #ff3333;
+
+.dashboard-container {
+  position: relative;
+  z-index: 10;
   height: 100vh;
-  padding: 16px 24px;
-  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+}
+
+// ============================================
+// Top Status Bar
+// ============================================
+.top-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 32px;
+  background: rgba(0, 0, 0, 0.85);
+  border-bottom: 2px solid rgba($cyber-cyan, 0.45);
+  font-family: $font-mono;
+  flex-shrink: 0;
   position: relative;
 
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: rgba($neon-green, 0.3);
-    border-radius: 2px;
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba($cyber-cyan, 0.6) 20%, $cyber-cyan 50%, rgba($cyber-cyan, 0.6) 80%, transparent 100%);
+    box-shadow: 0 0 20px rgba($cyber-cyan, 0.4);
   }
 }
 
-// ============ Page Header ============
-.page-header {
+.status-left {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px;
-  margin-bottom: 20px;
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba($neon-green, 0.3);
-  box-shadow: 0 0 15px rgba($neon-green, 0.1);
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .back-btn {
   background: none;
-  border: 1px solid rgba($neon-green, 0.3);
-  color: $neon-green;
-  padding: 4px 10px;
+  border: 1px solid rgba($cyber-cyan, 0.3);
+  color: $cyber-cyan;
+  padding: 6px 12px;
   cursor: pointer;
   font-family: $font-mono;
   font-size: 14px;
   transition: all 0.2s;
 
   &:hover {
-    background: rgba($neon-green, 0.1);
-    border-color: $neon-green;
+    background: rgba($cyber-cyan, 0.1);
+    border-color: $cyber-cyan;
+    box-shadow: 0 0 10px rgba($cyber-cyan, 0.3);
   }
 
   .bracket { opacity: 0.5; }
 }
 
-.page-title {
+.system-title {
+  font-size: 22px;
+  letter-spacing: 4px;
+  font-weight: bold;
   display: flex;
   align-items: center;
   gap: 8px;
 
+  .title-bracket {
+    color: rgba($cyber-cyan, 0.5);
+    font-size: 26px;
+  }
+
   .title-icon {
-    color: $neon-cyan;
-    font-size: 16px;
+    color: $cyber-cyan;
+    font-size: 10px;
+    animation: title-pulse 2s ease-in-out infinite;
   }
 
   .title-text {
-    font-family: $font-terminal;
-    font-size: 16px;
-    color: $neon-green;
-    letter-spacing: 3px;
+    color: $cyber-cyan;
+    text-shadow:
+      0 0 10px rgba($cyber-cyan, 0.6),
+      0 0 20px rgba($cyber-cyan, 0.4),
+      0 0 30px rgba($cyber-cyan, 0.2);
   }
+}
+
+@keyframes title-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .status-group {
   display: flex;
+  align-items: center;
   gap: 12px;
-  margin-left: 16px;
 }
 
 .status-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-family: $font-mono;
-  font-size: 12px;
+  gap: 10px;
+  padding: 8px 16px;
+  background: rgba($cyber-cyan, 0.08);
+  border: 1px solid rgba($cyber-cyan, 0.3);
+  border-radius: 4px;
 
   .stat-label {
-    color: $text-secondary;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
     letter-spacing: 1px;
   }
 
   .stat-value {
+    font-size: 18px;
     font-weight: bold;
-    font-size: 14px;
+    color: $cyber-cyan;
+    text-shadow: 0 0 8px rgba($cyber-cyan, 0.5);
   }
 
-  &.normal .stat-value { color: $neon-green; }
-  &.warning .stat-value { color: $neon-orange; }
-  &.critical .stat-value { color: $neon-red; }
+  &.online {
+    background: rgba($cyber-cyan, 0.1);
+    border-color: rgba($cyber-cyan, 0.4);
+  }
+
+  &.warning {
+    background: rgba($cyber-yellow, 0.1);
+    border-color: rgba($cyber-yellow, 0.4);
+    .stat-value { color: $cyber-yellow; text-shadow: 0 0 8px rgba($cyber-yellow, 0.5); }
+  }
+
+  &.critical {
+    background: rgba($cyber-red, 0.1);
+    border-color: rgba($cyber-red, 0.4);
+    .stat-value { color: $cyber-red; text-shadow: 0 0 8px rgba($cyber-red, 0.5); }
+  }
+}
+
+.status-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.realtime-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba($cyber-cyan, 0.3);
+  border-radius: 20px;
+
+  .indicator-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #666;
+    transition: all 0.3s ease;
+
+    &.active {
+      background: $cyber-cyan;
+      box-shadow: 0 0 10px $cyber-cyan;
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+  }
+
+  .indicator-text {
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: rgba(255, 255, 255, 0.7);
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 10px $cyber-cyan; }
+  50% { box-shadow: 0 0 20px $cyber-cyan, 0 0 30px rgba($cyber-cyan, 0.5); }
+}
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.refresh-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+
+  .refresh-label {
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 1px;
+  }
+
+  .refresh-value {
+    color: $cyber-cyan;
+    font-weight: bold;
+  }
 }
 
 .refresh-btn {
   background: none;
-  border: 1px solid rgba($neon-green, 0.3);
-  color: $neon-green;
-  padding: 4px 10px;
+  border: 1px solid rgba($cyber-cyan, 0.3);
+  color: $cyber-cyan;
+  padding: 6px 12px;
   cursor: pointer;
   font-family: $font-mono;
   font-size: 16px;
   transition: all 0.2s;
 
-  &:hover { background: rgba($neon-green, 0.1); }
+  &:hover { background: rgba($cyber-cyan, 0.1); box-shadow: 0 0 10px rgba($cyber-cyan, 0.3); }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .bracket { opacity: 0.5; font-size: 14px; }
@@ -355,311 +405,328 @@ onUnmounted(() => {
   to { transform: rotate(360deg); }
 }
 
-// ============ Database Cards Grid ============
-.databases-grid {
+// ============================================
+// Main Content - Left/Right Split
+// ============================================
+.main-content {
+  flex: 1;
+  display: flex;
+  padding: 24px;
+  gap: 24px;
+  overflow: hidden;
+  height: calc(100vh - 80px);
+  background: transparent;
+}
+
+// ============================================
+// Left: Database Cards Section (70%)
+// ============================================
+.servers-section {
+  flex: 7;
+  min-width: 0;
+  position: relative;
+  overflow: visible;
+  margin: 8px 0;
+
+  background:
+    repeating-linear-gradient(90deg, transparent 0px, transparent 1px, rgba(255, 255, 255, 0.008) 1px, rgba(255, 255, 255, 0.008) 2px),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(0, 212, 170, 0.012) 3px, rgba(0, 212, 170, 0.012) 4px),
+    radial-gradient(circle at 10% 20%, rgba(0, 212, 170, 0.025) 0%, transparent 20%),
+    radial-gradient(circle at 90% 80%, rgba(0, 212, 170, 0.025) 0%, transparent 20%),
+    radial-gradient(circle at 50% 50%, rgba(0, 212, 170, 0.015) 0%, transparent 40%),
+    linear-gradient(180deg, rgba(15, 18, 22, 0.88) 0%, rgba(10, 12, 16, 0.85) 50%, rgba(8, 10, 14, 0.88) 100%);
+  border-radius: 8px;
+  border: 1px solid rgba($cyber-cyan, 0.3);
+
+  box-shadow:
+    0 0 0 2px rgba(40, 40, 45, 0.7),
+    0 0 0 4px rgba(25, 25, 30, 0.75),
+    0 0 25px rgba($cyber-cyan, 0.15),
+    0 0 50px rgba($cyber-cyan, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 16px 48px rgba(0, 0, 0, 0.35),
+    inset 0 0 60px rgba(0, 0, 0, 0.3),
+    inset 0 0 30px rgba(0, 212, 170, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+// Rack Cabinet Top Panel
+.servers-section::before {
+  content: '';
+  position: absolute;
+  top: -20px; left: 10px; right: 10px;
+  height: 20px;
+  pointer-events: none;
+  z-index: 10;
+  background:
+    repeating-linear-gradient(90deg, transparent 0px, transparent 4px, rgba(10, 15, 15, 0.92) 4px, rgba(10, 15, 15, 0.92) 6px),
+    linear-gradient(90deg, transparent 0%, transparent 20%, rgba(0, 212, 170, 0.1) 50%, transparent 80%, transparent 100%),
+    linear-gradient(180deg, rgba(35, 38, 42, 0.95) 0%, rgba(28, 30, 34, 0.95) 40%, rgba(22, 24, 28, 0.95) 100%);
+  border-radius: 6px 6px 0 0;
+  box-shadow:
+    0 -2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 2px 4px rgba(60, 60, 65, 0.15),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.3),
+    0 -1px 10px rgba(0, 212, 170, 0.08);
+  border-top: 1px solid rgba(0, 212, 170, 0.2);
+  border-left: 1px solid rgba(60, 60, 65, 0.3);
+  border-right: 1px solid rgba(60, 60, 65, 0.3);
+}
+
+// Rack Cabinet Bottom Panel
+.servers-section::after {
+  content: '';
+  position: absolute;
+  bottom: -24px; left: 10px; right: 10px;
+  height: 24px;
+  pointer-events: none;
+  z-index: 10;
+  background:
+    radial-gradient(ellipse 20px 8px at 60px 16px, rgba(20, 22, 25, 0.95) 0%, transparent 100%),
+    radial-gradient(ellipse 20px 8px at calc(100% - 60px) 16px, rgba(20, 22, 25, 0.95) 0%, transparent 100%),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 4px, rgba(10, 15, 15, 0.92) 4px, rgba(10, 15, 15, 0.92) 6px),
+    linear-gradient(90deg, transparent 0%, transparent 30%, rgba(0, 212, 170, 0.08) 50%, transparent 70%, transparent 100%),
+    linear-gradient(0deg, rgba(22, 24, 28, 0.95) 0%, rgba(28, 30, 34, 0.95) 60%, rgba(35, 38, 42, 0.95) 100%);
+  border-radius: 0 0 6px 6px;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    inset 0 -2px 4px rgba(60, 60, 65, 0.1),
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    0 2px 10px rgba(0, 212, 170, 0.06);
+  border-bottom: 1px solid rgba(0, 212, 170, 0.15);
+  border-left: 1px solid rgba(50, 50, 55, 0.3);
+  border-right: 1px solid rgba(50, 50, 55, 0.3);
+}
+
+// Database Cards Grid - 3x2 layout
+.servers-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.database-card {
-  background: $bg-card;
-  border: 1px solid rgba($neon-green, 0.2);
-  padding: 16px;
+  grid-template-rows: repeat(2, 1fr);
+  gap: 28px 24px;
+  padding: 32px 48px 40px 48px;
+  height: 100%;
+  align-content: center;
   position: relative;
-  overflow: hidden;
-  transition: all 0.3s;
+  z-index: 5;
 
-  &:hover {
-    border-color: rgba($neon-green, 0.5);
-    box-shadow: 0 0 20px rgba($neon-green, 0.15);
-    transform: translateY(-2px);
+  // Inner rack structure
+  &::before {
+    content: '';
+    position: absolute;
+    top: 8px; left: 18px; right: 18px; bottom: 8px;
+    pointer-events: none;
+    z-index: 0;
+    border-radius: 4px;
+
+    background:
+      linear-gradient(90deg, rgba(25, 28, 32, 0.95) 0px, rgba(35, 38, 42, 0.95) 2px, rgba(45, 48, 52, 0.95) 4px, rgba(35, 38, 42, 0.95) 6px, rgba(28, 31, 35, 0.95) 8px, transparent 14px),
+      repeating-linear-gradient(0deg, transparent 0px, transparent 20px, rgba(0, 212, 170, 0.08) 20px, rgba(8, 12, 14, 0.9) 22px, rgba(0, 212, 170, 0.08) 24px, transparent 24px, transparent 44px),
+      linear-gradient(270deg, rgba(25, 28, 32, 0.95) 0px, rgba(35, 38, 42, 0.95) 2px, rgba(45, 48, 52, 0.95) 4px, rgba(35, 38, 42, 0.95) 6px, rgba(28, 31, 35, 0.95) 8px, transparent 14px),
+      repeating-linear-gradient(0deg, transparent 0px, transparent 20px, rgba(0, 212, 170, 0.08) 20px, rgba(8, 12, 14, 0.9) 22px, rgba(0, 212, 170, 0.08) 24px, transparent 24px, transparent 44px),
+      repeating-linear-gradient(0deg, transparent 0%, transparent calc(50% - 2px), rgba(0, 212, 170, 0.04) calc(50% - 2px), rgba(35, 40, 45, 0.6) 50%, rgba(0, 212, 170, 0.04) calc(50% + 2px), transparent calc(50% + 2px), transparent 100%),
+      linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.05) 20%, transparent 50%, rgba(0, 0, 0, 0.05) 80%, rgba(0, 0, 0, 0.15) 100%);
+    background-size: 14px 100%, 10px 44px, 14px 100%, 10px 44px, 100% 100%, 100% 100%;
+    background-position: left top, 2px top, right top, calc(100% - 2px) top, center center, center center;
+    background-repeat: no-repeat, repeat-y, no-repeat, repeat-y, no-repeat, no-repeat;
+
+    box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.3), inset 0 0 80px rgba(0, 0, 0, 0.15), inset 0 0 20px rgba(0, 212, 170, 0.02);
   }
 
-  &.status-warning {
-    border-color: rgba($neon-orange, 0.3);
-    &:hover { border-color: $neon-orange; box-shadow: 0 0 20px rgba($neon-orange, 0.15); }
-  }
-
-  &.status-critical {
-    border-color: rgba($neon-red, 0.3);
-    &:hover { border-color: $neon-red; box-shadow: 0 0 20px rgba($neon-red, 0.15); }
+  &::after {
+    content: '';
+    position: absolute;
+    top: 8px; left: 32px; right: 32px; bottom: 8px;
+    pointer-events: none;
+    z-index: 1;
+    background: radial-gradient(circle at center, transparent 1px, rgba(0, 212, 170, 0.015) 1px, rgba(0, 0, 0, 0.03) 2px, transparent 2px);
+    background-size: 8px 8px;
+    opacity: 0.6;
   }
 }
 
-// Card Header
-.card-header {
+// ============================================
+// Cabinet Frame Decorations
+// ============================================
+.cabinet-frame {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.cabinet-top {
+  position: absolute;
+  top: 8px; left: 50px; right: 50px;
+  height: 28px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba($neon-green, 0.1);
+  justify-content: space-between;
+  padding: 0 16px;
+  opacity: 0.7;
+  background:
+    repeating-linear-gradient(90deg, transparent 0px, transparent 1px, rgba(255, 255, 255, 0.015) 1px, rgba(255, 255, 255, 0.015) 2px),
+    linear-gradient(180deg, rgba(50, 55, 60, 0.85) 0%, rgba(38, 42, 48, 0.9) 50%, rgba(28, 32, 38, 0.9) 100%);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 212, 170, 0.2);
+  box-shadow: inset 0 1px 0 rgba(100, 105, 110, 0.15), 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 15px rgba(0, 212, 170, 0.05);
 }
 
-.server-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: $neon-green;
-  box-shadow: 0 0 8px $neon-green;
-  animation: pulse 2s ease-in-out infinite;
-
-  &.warning { background: $neon-orange; box-shadow: 0 0 8px $neon-orange; }
-  &.critical { background: $neon-red; box-shadow: 0 0 8px $neon-red; animation: pulse-fast 1s ease-in-out infinite; }
+.handle-left, .handle-right {
+  width: 32px; height: 8px;
+  background: linear-gradient(180deg, rgba(70, 75, 80, 0.95) 0%, rgba(50, 55, 60, 0.95) 40%, rgba(35, 40, 45, 0.95) 100%);
+  border-radius: 2px;
+  border: 1px solid rgba(0, 212, 170, 0.15);
+  box-shadow: inset 0 1px 0 rgba(100, 105, 110, 0.25), 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 6px rgba(0, 212, 170, 0.08);
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-@keyframes pulse-fast {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-.server-info {
-  flex: 1;
-}
-
-.server-name {
-  font-family: $font-terminal;
-  font-size: 14px;
-  color: $text-white;
+.cabinet-label {
+  font-family: $font-mono;
+  font-size: 9px;
   letter-spacing: 2px;
+  color: rgba($cyber-cyan, 0.6);
+  text-shadow: 0 0 8px rgba($cyber-cyan, 0.3);
 }
 
-.server-ip {
-  font-family: $font-mono;
-  font-size: 11px;
-  color: $text-secondary;
-  margin-top: 2px;
-}
-
-.status-badge {
-  font-family: $font-mono;
-  font-size: 10px;
-  padding: 2px 8px;
-  letter-spacing: 1px;
-  border: 1px solid;
-
-  &.normal {
-    color: $neon-green;
-    border-color: rgba($neon-green, 0.4);
-    background: rgba($neon-green, 0.1);
-  }
-  &.warning {
-    color: $neon-orange;
-    border-color: rgba($neon-orange, 0.4);
-    background: rgba($neon-orange, 0.1);
-  }
-  &.critical {
-    color: $neon-red;
-    border-color: rgba($neon-red, 0.4);
-    background: rgba($neon-red, 0.1);
-  }
-}
-
-// ============ Gauges Section ============
-.gauges-section {
-  margin-bottom: 14px;
-}
-
-.section-label {
-  font-family: $font-mono;
-  font-size: 10px;
-  color: $text-secondary;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  margin-bottom: 10px;
-}
-
-.gauges-row {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-}
-
-.gauge-item {
+.cabinet-rail-left {
+  position: absolute;
+  left: 16px; top: 60px; bottom: 60px;
+  width: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
+  gap: 12px;
+  padding: 12px 0;
+  opacity: 0.65;
+  background:
+    repeating-linear-gradient(180deg, transparent 0px, transparent 1px, rgba(255, 255, 255, 0.02) 1px, rgba(255, 255, 255, 0.02) 2px),
+    linear-gradient(90deg, rgba(40, 45, 50, 0.7) 0%, rgba(30, 35, 40, 0.85) 50%, rgba(40, 45, 50, 0.7) 100%);
+  border-radius: 3px;
+  border: 1px solid rgba(0, 212, 170, 0.12);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3), 0 0 8px rgba(0, 212, 170, 0.05);
 }
 
-.gauge-ring {
-  position: relative;
-  width: 80px;
-  height: 80px;
+.rail-led {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #1a1a1e;
+  border: 1px solid rgba(40, 40, 45, 0.6);
+  transition: all 0.3s ease;
+
+  &.active {
+    background: $cyber-cyan;
+    box-shadow: 0 0 8px $cyber-cyan, 0 0 12px rgba($cyber-cyan, 0.5);
+    animation: led-pulse 2s ease-in-out infinite;
+  }
+
+  &.warning.active {
+    background: $cyber-yellow;
+    box-shadow: 0 0 8px $cyber-yellow, 0 0 12px rgba($cyber-yellow, 0.5);
+    animation: led-blink-fast 0.5s ease-in-out infinite;
+  }
+
+  &.error.active {
+    background: $cyber-red;
+    box-shadow: 0 0 8px $cyber-red, 0 0 12px rgba($cyber-red, 0.5);
+    animation: led-blink-fast 0.3s ease-in-out infinite;
+  }
+}
+
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes led-blink-fast {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+.rail-screw {
+  width: 8px; height: 8px; border-radius: 50%;
+  opacity: 0.6;
+  background: linear-gradient(135deg, rgba(70, 75, 80, 0.95) 0%, rgba(55, 60, 65, 0.95) 30%, rgba(40, 45, 50, 0.95) 70%, rgba(55, 60, 65, 0.95) 100%);
+  border: 1px solid rgba(0, 212, 170, 0.1);
+  margin-top: auto;
+  box-shadow: 0 0 4px rgba(0, 212, 170, 0.05);
+
+  &:last-child { margin-top: 8px; margin-bottom: 0; }
+
+  &::after {
+    content: '';
+    display: block;
+    width: 5px; height: 1px;
+    background: rgba(15, 20, 25, 0.85);
+    margin: 3px auto 0;
+  }
+}
+
+.cabinet-rail-right {
+  position: absolute;
+  right: 16px; top: 60px; bottom: 60px;
+  width: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  opacity: 0.65;
+  background:
+    repeating-linear-gradient(180deg, transparent 0px, transparent 1px, rgba(255, 255, 255, 0.02) 1px, rgba(255, 255, 255, 0.02) 2px),
+    linear-gradient(270deg, rgba(40, 45, 50, 0.7) 0%, rgba(30, 35, 40, 0.85) 50%, rgba(40, 45, 50, 0.7) 100%);
+  border-radius: 3px;
+  border: 1px solid rgba(0, 212, 170, 0.12);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3), 0 0 8px rgba(0, 212, 170, 0.05);
+}
+
+.vent-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+
+  span {
+    width: 14px; height: 2px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 1px;
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 0 rgba(0, 212, 170, 0.03);
+  }
+}
+
+// ============================================
+// Right: Guardian Section (30%)
+// ============================================
+.guardian-section {
+  flex: 3;
+  min-width: 280px;
+  max-width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow: hidden;
+  min-height: 0;
+  background: transparent;
+}
+
+.face-panel {
+  height: 280px;
   flex-shrink: 0;
 }
 
-.gauge-svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
+.log-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.gauge-bg {
-  fill: none;
-  stroke: rgba($neon-green, 0.08);
-  stroke-width: 6;
-}
-
-.gauge-fill {
-  fill: none;
-  stroke-width: 6;
-  stroke-linecap: round;
-  stroke-dasharray: 263.89;
-  transition: stroke-dashoffset 1s ease;
-
-  &.normal { stroke: $neon-green; filter: drop-shadow(0 0 4px rgba($neon-green, 0.5)); }
-  &.warning { stroke: $neon-orange; filter: drop-shadow(0 0 4px rgba($neon-orange, 0.5)); }
-  &.critical { stroke: $neon-red; filter: drop-shadow(0 0 4px rgba($neon-red, 0.5)); }
-}
-
-.gauge-value {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-
-  .gauge-number {
-    font-family: $font-terminal;
-    font-size: 20px;
-    color: $text-white;
-    text-shadow: 0 0 10px rgba($neon-green, 0.5);
-
-    &.empty {
-      color: $text-secondary;
-      text-shadow: none;
-    }
-  }
-
-  .gauge-unit {
-    font-family: $font-mono;
-    font-size: 10px;
-    color: $text-secondary;
-    margin-left: 1px;
-  }
-}
-
-.gauge-label {
-  text-align: center;
-
-  .ts-name {
-    font-family: $font-mono;
-    font-size: 10px;
-    color: $neon-green;
-    letter-spacing: 1px;
-    word-break: break-all;
-    line-height: 1.3;
-
-    &.system {
-      color: $neon-cyan;
-    }
-
-    &.empty {
-      color: $text-secondary;
-    }
-  }
-
-  .ts-type {
-    font-family: $font-mono;
-    font-size: 8px;
-    letter-spacing: 1px;
-    margin-top: 2px;
-    padding: 1px 6px;
-    display: inline-block;
-
-    &.business {
-      color: $neon-green;
-      background: rgba($neon-green, 0.08);
-      border: 1px solid rgba($neon-green, 0.2);
-    }
-
-    &.system {
-      color: $neon-cyan;
-      background: rgba($neon-cyan, 0.08);
-      border: 1px solid rgba($neon-cyan, 0.2);
-    }
-  }
-}
-
-.ts-count {
-  font-family: $font-mono;
-  font-size: 10px;
-  color: $text-secondary;
-  text-align: center;
-  margin-top: 8px;
-  letter-spacing: 1px;
-}
-
-// ============ DB Metrics ============
-.db-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-
-  .metric {
-    text-align: center;
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba($neon-green, 0.1);
-
-    .metric-label {
-      display: block;
-      font-family: $font-mono;
-      font-size: 9px;
-      color: $text-secondary;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 4px;
-    }
-
-    .metric-value {
-      font-family: $font-terminal;
-      font-size: 16px;
-      color: $neon-cyan;
-      font-weight: bold;
-      text-shadow: 0 0 10px rgba($neon-cyan, 0.5);
-    }
-  }
-}
-
-// ============ Card Scanline Effect ============
-.card-scanline {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba($neon-green, 0.3), transparent);
-  opacity: 0;
-  transition: opacity 0.3s;
-
-  .database-card:hover & {
-    opacity: 1;
-    animation: scanMove 2s linear infinite;
-  }
-}
-
-@keyframes scanMove {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(300px); }
-}
-
-// ============ Loading ============
+// ============================================
+// Loading Overlay
+// ============================================
 .loading-overlay {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  top: 50%; left: 50%;
   transform: translate(-50%, -50%);
+  z-index: 100;
 }
 
 .loading-text {
@@ -683,16 +750,87 @@ onUnmounted(() => {
   100% { content: ''; }
 }
 
-// ============ Responsive ============
+// ============================================
+// Responsive
+// ============================================
+@media (max-width: 1400px) {
+  .servers-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px 18px;
+    padding: 28px 36px 36px 36px;
+  }
+
+  .guardian-section {
+    min-width: 260px;
+    max-width: 320px;
+  }
+}
+
 @media (max-width: 1200px) {
-  .databases-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .main-content {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .servers-section {
+    flex: none;
+    height: auto;
+    min-height: 500px;
+  }
+
+  .guardian-section {
+    flex: none;
+    max-width: none;
+    min-width: 0;
+    flex-direction: row;
+    height: 350px;
+  }
+
+  .face-panel {
+    height: 100%;
+    width: 300px;
+    flex-shrink: 0;
+  }
+
+  .log-panel {
+    flex: 1;
+    height: 100%;
   }
 }
 
 @media (max-width: 768px) {
-  .databases-grid {
-    grid-template-columns: 1fr;
+  .servers-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .top-status-bar {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .system-title {
+    font-size: 16px;
+    .title-bracket { font-size: 20px; }
+  }
+
+  .status-group {
+    display: none;
+  }
+
+  .guardian-section {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .face-panel {
+    width: 100%;
+    height: 200px;
+  }
+
+  .log-panel {
+    height: 300px;
   }
 }
 </style>

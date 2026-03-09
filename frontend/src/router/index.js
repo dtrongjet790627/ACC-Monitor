@@ -47,16 +47,8 @@ const routes = [
     name: 'OracleOpsDetail',
     component: () => import('@/views/OracleOpsDetail.vue')
   },
-  {
-    path: '/oracle-ops-backups',
-    name: 'OracleOpsBackups',
-    component: () => import('@/views/OracleOpsBackups.vue')
-  },
-  {
-    path: '/oracle-ops-alerts',
-    name: 'OracleOpsAlerts',
-    component: () => import('@/views/OracleOpsAlerts.vue')
-  }
+  // Backups and Alerts are now integrated into OracleOps page
+  // '/oracle-ops-backups' and '/oracle-ops-alerts' routes removed
 ]
 
 const router = createRouter({
