@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 
-const API_BASE = 'http://localhost:5002/api'
+const API_BASE = 'http://localhost:5004/api'
 
 // 服务器配置（与后端settings.py保持一致）
 // 排序顺序: 153、164、168、193、194、160、163、165

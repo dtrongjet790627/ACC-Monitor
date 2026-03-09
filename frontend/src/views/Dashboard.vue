@@ -48,6 +48,13 @@
           <span class="ping-label">AVG PING</span>
           <span class="ping-value">{{ avgPing }}ms</span>
         </div>
+        <button class="oracle-ops-btn" @click="goToOracleOps" title="Oracle DB Ops">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
+        </button>
         <button class="admin-entry-btn" @click="goToAdmin" title="Admin Console">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -191,6 +198,11 @@ const monitorStore = useMonitorStore()
 // Navigate to admin
 function goToAdmin() {
   router.push('/admin')
+}
+
+// Navigate to Oracle Ops
+function goToOracleOps() {
+  router.push('/oracle-ops')
 }
 
 // Initialize WebSocket connection
@@ -569,6 +581,33 @@ $cyber-red: #ff3333;
     font-weight: bold;
     color: $cyber-cyan;
     text-shadow: 0 0 10px rgba($cyber-cyan, 0.6);
+  }
+}
+
+// Oracle Ops button (database icon)
+.oracle-ops-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba($neon-green, 0.3);
+  border-radius: 4px;
+  background: rgba($neon-green, 0.06);
+  color: rgba($neon-green, 0.6);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-left: 8px;
+
+  &:hover {
+    color: $neon-green;
+    border-color: $neon-green;
+    background: rgba($neon-green, 0.15);
+    box-shadow: 0 0 15px rgba($neon-green, 0.3);
+  }
+
+  svg {
+    transition: transform 0.3s ease;
   }
 }
 

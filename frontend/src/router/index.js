@@ -35,6 +35,27 @@ const routes = [
     path: '/admin',
     name: 'Admin',
     component: () => import('@/views/Admin.vue')
+  },
+  // Oracle Database Operations Monitoring
+  {
+    path: '/oracle-ops',
+    name: 'OracleOps',
+    component: () => import('@/views/OracleOps.vue')
+  },
+  {
+    path: '/oracle-ops/:id',
+    name: 'OracleOpsDetail',
+    component: () => import('@/views/OracleOpsDetail.vue')
+  },
+  {
+    path: '/oracle-ops-backups',
+    name: 'OracleOpsBackups',
+    component: () => import('@/views/OracleOpsBackups.vue')
+  },
+  {
+    path: '/oracle-ops-alerts',
+    name: 'OracleOpsAlerts',
+    component: () => import('@/views/OracleOpsAlerts.vue')
   }
 ]
 

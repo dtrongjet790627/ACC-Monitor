@@ -19,7 +19,7 @@ start "ACC-Monitor Frontend" cmd /k "npm run dev"
 
 echo ====================================
 echo   System Started!
-echo   Backend:  http://localhost:5002
+echo   Backend:  http://localhost:5004
 echo   Frontend: http://localhost:3000
 echo ====================================
 

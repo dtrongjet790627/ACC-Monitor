@@ -35,7 +35,7 @@ print("Scheduler started - background monitoring active")
 
 if __name__ == '__main__':
     # Get port from environment or use default
-    port = int(os.environ.get('PORT', 5002))
+    port = int(os.environ.get('PORT', 5004))
     host = os.environ.get('HOST', '0.0.0.0')
     debug = os.environ.get('FLASK_ENV') == 'development'
 

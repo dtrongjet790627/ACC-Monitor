@@ -14,11 +14,11 @@ export default defineConfig({
     strictPort: true,  // 禁止自动更换端口，端口被占用时直接报错
     proxy: {
       '/api': {
-        target: 'http://localhost:5002',
+        target: 'http://localhost:5004',
         changeOrigin: true
       },
       '/socket.io': {
-        target: 'http://localhost:5002',
+        target: 'http://localhost:5004',
         changeOrigin: true,
         ws: true
       }
