@@ -74,6 +74,11 @@ def create_app(config_name=None):
         db.create_all()
         # Migrate: add current_file columns to ops_tablespace_data if missing
         _migrate_tablespace_columns(app)
+        # Ensure performance indexes exist on Oracle Ops tables
+        from app.services.oracle_ops_service import oracle_ops_service
+        oracle_ops_service.ensure_indexes()
+        # Clean up old data to prevent database bloat (keep 7 days tablespace, 30 days alerts)
+        oracle_ops_service.cleanup_old_data(days=7)
 
     # Register WebSocket handlers
     from app.api import websocket

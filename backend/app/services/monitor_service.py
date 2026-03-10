@@ -1050,6 +1050,40 @@ class MonitorService:
 
         return result
 
+    def _merge_processes_and_services(self, processes: List[Dict], services: List[Dict]) -> List[Dict]:
+        """Merge processes and services lists, deduplicating entries that appear in both.
+
+        When the Agent is online, check_windows_processes() returns the agent's full
+        process list which already includes services. check_windows_services() then
+        adds SSH-sourced services, causing duplicates. This method prevents that by
+        only adding services that are not already present in the processes list.
+
+        Priority: agent-sourced entries are preferred over SSH-sourced entries because
+        agent data is real-time.
+        """
+        # Build lookup sets from existing processes
+        existing_names = set()
+        existing_service_names = set()
+        for p in processes:
+            name_lower = (p.get('name') or '').lower()
+            svc_name_lower = (p.get('service_name') or '').lower()
+            if name_lower:
+                existing_names.add(name_lower)
+            if svc_name_lower:
+                existing_service_names.add(svc_name_lower)
+
+        merged = list(processes)
+        for svc in services:
+            svc_service_name = (svc.get('service_name') or '').lower()
+            svc_display_name = (svc.get('name') or '').lower()
+            # Skip if this service already exists in the processes list
+            if svc_service_name and svc_service_name in existing_service_names:
+                continue
+            if svc_display_name and svc_display_name in existing_names:
+                continue
+            merged.append(svc)
+        return merged
+
     def get_server_status(self, server_id: str, processes: List[Dict] = None) -> str:
         """Determine overall server status based on processes"""
         if server_id not in SERVERS:
@@ -1063,7 +1097,7 @@ class MonitorService:
                 processes = self.check_windows_processes(server_id)
                 services = self.check_windows_services(server_id)
                 if services:
-                    processes.extend(services)
+                    processes = self._merge_processes_and_services(processes, services)
             else:
                 processes = self.check_linux_processes(server_id)
 
@@ -1127,8 +1161,36 @@ class MonitorService:
         if elapsed >= self.AGENT_FRESHNESS_THRESHOLD:
             return None
 
-        processes = agent_data.get('processes', [])
+        processes = list(agent_data.get('processes', []))
         resources = agent_data.get('resources', {})
+
+        # For Linux servers, the agent reports containers separately.
+        # Merge them into the processes list so they appear in the UI.
+        containers = agent_data.get('containers', [])
+        if containers:
+            for container in containers:
+                # Normalize container data to match the process format used by the UI
+                proc_entry = {
+                    'name': container.get('name', ''),
+                    'status': container.get('status', 'unknown'),
+                    'container_id': container.get('container_id', ''),
+                    'type': 'container',
+                    'data_source': 'agent',
+                    'last_check': datetime.utcnow().isoformat(),
+                }
+                # Add display name based on container type
+                cname = container.get('name', '')
+                if cname == 'hulu-eai':
+                    proc_entry['display_name'] = 'HULU EAI Container'
+                elif cname == 'redis':
+                    proc_entry['display_name'] = 'HULU EAI Redis'
+                else:
+                    proc_entry['display_name'] = cname
+                # Carry over metrics if available
+                if 'metrics' in container:
+                    proc_entry['metrics'] = container['metrics']
+                processes.append(proc_entry)
+            logger.debug(f"[AgentData] {server_id}: merged {len(containers)} containers into processes list")
 
         # Mark every process with data_source='agent'
         for proc in processes:
@@ -1232,7 +1294,7 @@ class MonitorService:
                 processes = self.check_windows_processes(server_id)
                 services = self.check_windows_services(server_id)
                 if services:
-                    processes.extend(services)
+                    processes = self._merge_processes_and_services(processes, services)
             else:
                 processes = self.check_linux_processes(server_id)
 

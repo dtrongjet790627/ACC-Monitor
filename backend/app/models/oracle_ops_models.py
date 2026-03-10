@@ -19,17 +19,16 @@ class OpsTablespaceData(db.Model):
     used_mb = db.Column(db.Float)
     max_mb = db.Column(db.Float)
     usage_pct = db.Column(db.Float)
-    # Current active file data for business tablespaces (ACC_DATA, IPLANT_*_DATA)
-    # For business tablespaces with multiple data files, only the latest file (max file_id)
-    # is the active one. Historical files being full is normal and expected.
+    # Legacy columns (no longer populated since 2026-03-10).
+    # usage_pct is now uniformly maxsize-based for all tablespaces.
     current_file_pct = db.Column(db.Float, nullable=True)
     current_file_used_mb = db.Column(db.Float, nullable=True)
     current_file_max_mb = db.Column(db.Float, nullable=True)
     collected_at = db.Column(db.DateTime, index=True)
-    reported_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reported_at = db.Column(db.DateTime, default=datetime.now)
 
     def to_dict(self):
-        result = {
+        return {
             'id': self.id,
             'server_id': self.server_id,
             'server_name': self.server_name,
@@ -40,12 +39,6 @@ class OpsTablespaceData(db.Model):
             'collected_at': self.collected_at.isoformat() if self.collected_at else None,
             'reported_at': self.reported_at.isoformat() if self.reported_at else None
         }
-        # Include current_file data if available (business tablespaces)
-        if self.current_file_pct is not None:
-            result['current_file_pct'] = self.current_file_pct
-            result['current_file_used_mb'] = self.current_file_used_mb
-            result['current_file_max_mb'] = self.current_file_max_mb
-        return result
 
 
 class OpsBackupRecord(db.Model):
@@ -63,7 +56,7 @@ class OpsBackupRecord(db.Model):
     started_at = db.Column(db.DateTime)
     finished_at = db.Column(db.DateTime)
     error_msg = db.Column(db.Text)
-    reported_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reported_at = db.Column(db.DateTime, default=datetime.now)
 
     def to_dict(self):
         return {
@@ -96,7 +89,7 @@ class OpsCleanupRecord(db.Model):
     started_at = db.Column(db.DateTime)
     finished_at = db.Column(db.DateTime)
     error_msg = db.Column(db.Text)
-    reported_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reported_at = db.Column(db.DateTime, default=datetime.now)
 
     def to_dict(self):
         return {
@@ -126,7 +119,7 @@ class OpsAlertRecord(db.Model):
     message = db.Column(db.Text)
     detail = db.Column(db.Text)
     triggered_at = db.Column(db.DateTime, index=True)
-    reported_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reported_at = db.Column(db.DateTime, default=datetime.now)
 
     def to_dict(self):
         return {

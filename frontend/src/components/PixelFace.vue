@@ -87,7 +87,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-top: 8px;
   background: linear-gradient(180deg, rgba(0, 10, 20, 0.30) 0%, rgba(0, 5, 15, 0.35) 100%);
   border: 1px solid rgba(0, 212, 170, 0.3);
   overflow: hidden;

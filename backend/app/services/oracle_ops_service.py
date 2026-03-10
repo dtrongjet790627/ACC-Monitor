@@ -51,11 +51,12 @@ class OracleOpsService:
             try:
                 collected_at = datetime.fromisoformat(timestamp_str)
             except (ValueError, TypeError):
-                collected_at = datetime.utcnow()
+                collected_at = datetime.now()
 
         stored = {'tablespaces': 0, 'backups': 0, 'cleanups': 0, 'alerts': 0}
 
         # Store tablespace data
+        # usage_pct is now uniformly maxsize-based (used / maxsize)
         tablespaces = data.get('tablespaces', [])
         for ts in tablespaces:
             record = OpsTablespaceData(
@@ -65,16 +66,15 @@ class OracleOpsService:
                 used_mb=ts.get('used_mb', 0),
                 max_mb=ts.get('max_mb', 0),
                 usage_pct=ts.get('usage_pct', 0),
-                # Store current active file data for business tablespaces
-                current_file_pct=ts.get('current_file_pct'),
-                current_file_used_mb=ts.get('current_file_used_mb'),
-                current_file_max_mb=ts.get('current_file_max_mb'),
-                collected_at=collected_at or datetime.utcnow()
+                collected_at=collected_at or datetime.now()
             )
             db.session.add(record)
             stored['tablespaces'] += 1
 
         # Store backup records
+        # Note: Backup records are primarily submitted via /api/oracle-ops/backup/register
+        # by the backup operator after each backup completes. This section handles any
+        # backup records that may still arrive through the periodic report for compatibility.
         backups = data.get('backups', [])
         for bk in backups:
             record = OpsBackupRecord(
@@ -119,7 +119,7 @@ class OracleOpsService:
                 severity=al.get('severity', 'warning'),
                 message=al.get('message', ''),
                 detail=al.get('detail', ''),
-                triggered_at=self._parse_dt(al.get('triggered_at')) or datetime.utcnow()
+                triggered_at=self._parse_dt(al.get('triggered_at')) or datetime.now()
             )
             db.session.add(record)
             stored['alerts'] += 1
@@ -135,8 +135,37 @@ class OracleOpsService:
         """
         Get overview data for all 6 Oracle databases.
         Returns: server status, max tablespace usage, latest backup, recent alerts.
+        Optimized: batch alert counts in a single query instead of 6 separate queries.
+        Uses datetime.now() instead of utcnow() since agent data is in local time.
         """
         overview = []
+
+        # Batch query: count alerts per server in the last 24 hours (single query)
+        # Use datetime.now() because OracleOps agent stores timestamps in local time
+        since_24h = datetime.now() - timedelta(hours=24)
+        alert_counts_query = db.session.query(
+            OpsAlertRecord.server_id,
+            func.count(OpsAlertRecord.id)
+        ).filter(
+            OpsAlertRecord.triggered_at >= since_24h,
+            OpsAlertRecord.severity.in_(['warning', 'critical'])
+        ).group_by(OpsAlertRecord.server_id).all()
+        alert_counts_map = {row[0]: row[1] for row in alert_counts_query}
+
+        # Batch query: latest backup per server (single query using subquery)
+        backup_subquery = db.session.query(
+            OpsBackupRecord.server_id,
+            func.max(OpsBackupRecord.finished_at).label('max_finished')
+        ).group_by(OpsBackupRecord.server_id).subquery()
+
+        latest_backups_query = OpsBackupRecord.query.join(
+            backup_subquery,
+            db.and_(
+                OpsBackupRecord.server_id == backup_subquery.c.server_id,
+                OpsBackupRecord.finished_at == backup_subquery.c.max_finished
+            )
+        ).all()
+        latest_backups_map = {b.server_id: b for b in latest_backups_query}
 
         for server_id, info in ORACLE_SERVERS.items():
             server_data = {
@@ -201,24 +230,11 @@ class OracleOpsService:
                 if recent_ts:
                     featured_ts = self._select_featured_tablespace(recent_ts)
 
-                    # For business tablespaces with current_file_pct data,
-                    # use the current active file usage instead of total usage.
-                    # Business tablespaces may have multiple data files; historical
-                    # files being full is normal. Only the latest file matters.
+                    # usage_pct is now uniformly maxsize-based (used / maxsize)
                     display_pct = featured_ts.usage_pct or 0
-                    if (self._is_business_tablespace(featured_ts.tablespace_name)
-                            and featured_ts.current_file_pct is not None):
-                        display_pct = featured_ts.current_file_pct
 
                     server_data['max_tablespace_usage'] = display_pct
                     server_data['max_tablespace_name'] = featured_ts.tablespace_name
-                    # Also include the raw total usage for reference
-                    server_data['total_usage_pct'] = featured_ts.usage_pct or 0
-                    # Include current_file data if available
-                    if featured_ts.current_file_pct is not None:
-                        server_data['current_file_pct'] = featured_ts.current_file_pct
-                        server_data['current_file_used_mb'] = featured_ts.current_file_used_mb
-                        server_data['current_file_max_mb'] = featured_ts.current_file_max_mb
 
                     # Determine status based on the display percentage
                     if display_pct >= 95:
@@ -228,26 +244,16 @@ class OracleOpsService:
             else:
                 server_data['status'] = 'unknown'
 
-            # Get latest backup record
-            latest_backup = OpsBackupRecord.query.filter_by(
-                server_id=server_id
-            ).order_by(OpsBackupRecord.finished_at.desc()).first()
-
+            # Get latest backup from pre-fetched map
+            latest_backup = latest_backups_map.get(server_id)
             if latest_backup:
                 server_data['latest_backup'] = latest_backup.status
                 server_data['latest_backup_time'] = (
                     latest_backup.finished_at.isoformat() if latest_backup.finished_at else None
                 )
 
-            # Count recent alerts (last 24 hours), excluding info-level alerts
-            # (e.g., SYSAUX alerts that have been downgraded to info)
-            since_24h = datetime.utcnow() - timedelta(hours=24)
-            alert_count = OpsAlertRecord.query.filter(
-                OpsAlertRecord.server_id == server_id,
-                OpsAlertRecord.triggered_at >= since_24h,
-                OpsAlertRecord.severity.in_(['warning', 'critical'])
-            ).count()
-            server_data['recent_alerts_count'] = alert_count
+            # Get alert count from pre-fetched map
+            server_data['recent_alerts_count'] = alert_counts_map.get(server_id, 0)
 
             overview.append(server_data)
 
@@ -294,7 +300,7 @@ class OracleOpsService:
         Get tablespace usage trends for ECharts.
         Returns data grouped by tablespace name with time series.
         """
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now() - timedelta(days=days)
         query = OpsTablespaceData.query.filter(
             OpsTablespaceData.collected_at >= since
         )
@@ -313,29 +319,15 @@ class OracleOpsService:
                     'server_id': record.server_id,
                     'server_name': record.server_name,
                     'tablespace_name': record.tablespace_name,
-                    'is_business': self._is_business_tablespace(record.tablespace_name),
                     'data_points': []
                 }
 
-            # For business tablespaces, use current_file_pct when available
-            display_pct = record.usage_pct
-            display_used_mb = record.used_mb
-            display_max_mb = record.max_mb
-            if (self._is_business_tablespace(record.tablespace_name)
-                    and record.current_file_pct is not None):
-                display_pct = record.current_file_pct
-                display_used_mb = record.current_file_used_mb
-                display_max_mb = record.current_file_max_mb
-
+            # usage_pct is now uniformly maxsize-based (used / maxsize)
             trends[key]['data_points'].append({
                 'time': record.collected_at.isoformat() if record.collected_at else None,
-                'usage_pct': display_pct,
-                'used_mb': display_used_mb,
-                'max_mb': display_max_mb,
-                # Include raw total values for reference
-                'total_usage_pct': record.usage_pct,
-                'total_used_mb': record.used_mb,
-                'total_max_mb': record.max_mb,
+                'usage_pct': record.usage_pct,
+                'used_mb': record.used_mb,
+                'max_mb': record.max_mb,
             })
 
         return list(trends.values())
@@ -508,6 +500,60 @@ class OracleOpsService:
             return datetime.fromisoformat(dt_str)
         except (ValueError, TypeError):
             return None
+
+    def cleanup_old_data(self, days=7):
+        """
+        Clean up old tablespace data and alert records to prevent database bloat.
+        Keeps the last N days of data. Called periodically or on startup.
+        Uses datetime.now() since agent data is stored in local time.
+        """
+        cutoff = datetime.now() - timedelta(days=days)
+        try:
+            # Delete old tablespace records
+            ts_deleted = OpsTablespaceData.query.filter(
+                OpsTablespaceData.collected_at < cutoff
+            ).delete(synchronize_session=False)
+
+            # Delete old alert records (keep 30 days)
+            alert_cutoff = datetime.now() - timedelta(days=30)
+            alert_deleted = OpsAlertRecord.query.filter(
+                OpsAlertRecord.triggered_at < alert_cutoff
+            ).delete(synchronize_session=False)
+
+            db.session.commit()
+
+            if ts_deleted > 0 or alert_deleted > 0:
+                logger.info(
+                    "Data cleanup: removed %d tablespace records (>%d days), "
+                    "%d alert records (>30 days)",
+                    ts_deleted, days, alert_deleted
+                )
+            return {'tablespaces_deleted': ts_deleted, 'alerts_deleted': alert_deleted}
+        except Exception as e:
+            db.session.rollback()
+            logger.error("Data cleanup failed: %s", e)
+            return {'error': str(e)}
+
+    def ensure_indexes(self):
+        """
+        Ensure proper indexes exist on SQLite tables for query performance.
+        Safe to call multiple times (CREATE INDEX IF NOT EXISTS).
+        """
+        index_statements = [
+            "CREATE INDEX IF NOT EXISTS idx_ts_server_collected ON ops_tablespace_data(server_id, collected_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_backup_server_finished ON ops_backup_records(server_id, finished_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_alert_server_triggered ON ops_alert_records(server_id, triggered_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_alert_severity_triggered ON ops_alert_records(severity, triggered_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_cleanup_server_finished ON ops_cleanup_records(server_id, finished_at DESC)",
+        ]
+        try:
+            for stmt in index_statements:
+                db.session.execute(db.text(stmt))
+            db.session.commit()
+            logger.info("Database indexes ensured successfully")
+        except Exception as e:
+            db.session.rollback()
+            logger.warning("Failed to create indexes (non-critical): %s", e)
 
 
 # Singleton instance

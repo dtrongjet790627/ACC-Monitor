@@ -42,7 +42,7 @@ def receive_report():
             'message': 'Report received',
             'server_id': server_id,
             'stored': stored,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
@@ -64,7 +64,7 @@ def get_overview():
         return jsonify({
             'code': 200,
             'data': overview,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
@@ -86,7 +86,7 @@ def get_tablespaces():
         return jsonify({
             'code': 200,
             'data': data,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
@@ -109,7 +109,7 @@ def get_tablespace_trends():
         return jsonify({
             'code': 200,
             'data': data,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
@@ -137,7 +137,7 @@ def get_backups():
         return jsonify({
             'code': 200,
             'data': data,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
@@ -165,7 +165,7 @@ def get_cleanups():
         return jsonify({
             'code': 200,
             'data': data,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
@@ -193,12 +193,103 @@ def get_alerts():
         return jsonify({
             'code': 200,
             'data': data,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
             'code': 500,
             'message': f'Failed to get alerts: {str(e)}'
+        }), 500
+
+
+# ============ Manual Backup Registration API ============
+
+@oracle_ops_bp.route('/backup/register', methods=['POST'])
+def register_manual_backup():
+    """
+    Register a manual backup operation (e.g., exp/expdp done outside OracleOps agent).
+    This allows backup records to appear in the dashboard even when backups are
+    performed manually rather than through the automated OracleOps agent.
+
+    Expected JSON payload:
+    {
+        "server_id": "153",
+        "backup_type": "audit",       // audit, data, manual
+        "status": "success",           // success, failed
+        "file_path": "E:\\OracleOps\\audit_backup\\aud_153_20260310.dmp",
+        "file_size_mb": 12.5,          // optional
+        "rows_exported": 50000,        // optional
+        "started_at": "2026-03-10T08:00:00",   // optional, ISO format
+        "finished_at": "2026-03-10T08:05:00",  // optional, ISO format
+        "error_msg": null              // optional
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 400, 'message': 'No data provided'}), 400
+
+    server_id = data.get('server_id')
+    if not server_id:
+        return jsonify({'code': 400, 'message': 'server_id is required'}), 400
+
+    try:
+        from app.models.oracle_ops_models import OpsBackupRecord
+        from app.services.oracle_ops_service import ORACLE_SERVERS
+        from app import db
+
+        server_name = data.get('server_name',
+                               ORACLE_SERVERS.get(server_id, {}).get('name', ''))
+
+        record = OpsBackupRecord(
+            server_id=server_id,
+            server_name=server_name,
+            backup_type=data.get('backup_type', 'manual'),
+            status=data.get('status', 'success'),
+            rows_exported=data.get('rows_exported', 0),
+            file_size_mb=data.get('file_size_mb', 0),
+            file_path=data.get('file_path', ''),
+            started_at=oracle_ops_service._parse_dt(data.get('started_at')) or datetime.now(),
+            finished_at=oracle_ops_service._parse_dt(data.get('finished_at')) or datetime.now(),
+            error_msg=data.get('error_msg')
+        )
+        db.session.add(record)
+        db.session.commit()
+
+        return jsonify({
+            'code': 200,
+            'message': 'Backup record registered',
+            'record_id': record.id,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'code': 500,
+            'message': f'Failed to register backup: {str(e)}'
+        }), 500
+
+
+# ============ Data Maintenance APIs ============
+
+@oracle_ops_bp.route('/maintenance/cleanup', methods=['POST'])
+def cleanup_old_data():
+    """
+    Trigger cleanup of old data to prevent database bloat.
+    Optional JSON body: {"days": 7}
+    """
+    data = request.get_json() or {}
+    days = data.get('days', 7)
+
+    try:
+        result = oracle_ops_service.cleanup_old_data(days=days)
+        return jsonify({
+            'code': 200,
+            'data': result,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'code': 500,
+            'message': f'Cleanup failed: {str(e)}'
         }), 500
 
 
@@ -218,7 +309,7 @@ def get_config(server_id):
         return jsonify({
             'code': 200,
             'data': config,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
@@ -240,7 +331,7 @@ def push_config(server_id):
         return jsonify({
             'code': status_code,
             'data': result,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now().isoformat()
         }), status_code
     except Exception as e:
         return jsonify({

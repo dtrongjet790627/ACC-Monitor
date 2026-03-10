@@ -79,7 +79,6 @@
               >
                 <td class="ts-name-cell">
                   {{ ts.tablespace_name }}
-                  <span v-if="ts.current_file_pct != null" class="current-file-tag">FILE</span>
                 </td>
                 <td class="number-cell">{{ formatMB(getDisplayUsedMB(ts)) }}</td>
                 <td class="number-cell">{{ formatMB(getDisplayMaxMB(ts)) }}</td>
@@ -153,34 +152,16 @@ function getBarClass(pct) {
   return 'bar-normal'
 }
 
-// For business tablespaces (ACC_DATA, IPLANT_*_DATA), display current active file usage
-// instead of total usage across all data files. Historical files being full is expected.
-function isBusinessTablespace(tsName) {
-  if (!tsName) return false
-  const upper = tsName.toUpperCase()
-  if (upper.includes('ACC_DATA')) return true
-  if (upper.startsWith('IPLANT_') && upper.endsWith('_DATA')) return true
-  return false
-}
-
+// usage_pct is now uniformly maxsize-based (used / maxsize) for all tablespaces
 function getDisplayPct(ts) {
-  if (isBusinessTablespace(ts.tablespace_name) && ts.current_file_pct != null) {
-    return ts.current_file_pct
-  }
   return ts.usage_pct || 0
 }
 
 function getDisplayUsedMB(ts) {
-  if (isBusinessTablespace(ts.tablespace_name) && ts.current_file_used_mb != null) {
-    return ts.current_file_used_mb
-  }
   return ts.used_mb
 }
 
 function getDisplayMaxMB(ts) {
-  if (isBusinessTablespace(ts.tablespace_name) && ts.current_file_max_mb != null) {
-    return ts.current_file_max_mb
-  }
   return ts.max_mb
 }
 

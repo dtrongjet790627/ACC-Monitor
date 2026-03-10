@@ -128,10 +128,10 @@ def get_server_status(server_id):
     # Get processes
     if os_type == 'windows':
         processes = monitor_service.check_windows_processes(server_id)
-        # Also check Windows services
+        # Also check Windows services (with deduplication)
         services = monitor_service.check_windows_services(server_id)
         if services:
-            processes.extend(services)
+            processes = monitor_service._merge_processes_and_services(processes, services)
     else:
         processes = monitor_service.check_linux_processes(server_id)
 
@@ -162,10 +162,10 @@ def get_server_processes(server_id):
 
     if os_type == 'windows':
         processes = monitor_service.check_windows_processes(server_id)
-        # Also check Windows services
+        # Also check Windows services (with deduplication)
         services = monitor_service.check_windows_services(server_id)
         if services:
-            processes.extend(services)
+            processes = monitor_service._merge_processes_and_services(processes, services)
     else:
         processes = monitor_service.check_linux_processes(server_id)
 

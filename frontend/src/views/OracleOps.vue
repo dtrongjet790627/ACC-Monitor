@@ -777,19 +777,8 @@ const modalFilteredTablespaces = computed(() => {
   return store.tablespaces.filter(ts => ts.server_id === modalServerId.value)
 })
 
-// Business tablespace helpers (same logic as OracleOpsDetail)
-function isBusinessTablespace(tsName) {
-  if (!tsName) return false
-  const upper = tsName.toUpperCase()
-  if (upper.includes('ACC_DATA')) return true
-  if (upper.startsWith('IPLANT_') && upper.endsWith('_DATA')) return true
-  return false
-}
-
 function getDisplayPct(ts) {
-  if (isBusinessTablespace(ts.tablespace_name) && ts.current_file_pct != null) {
-    return ts.current_file_pct
-  }
+  // usage_pct is now uniformly maxsize-based (used / maxsize)
   return ts.usage_pct || 0
 }
 
