@@ -508,19 +508,54 @@ def agent_report():
         server.status = 'normal'
 
     # Process alerts from agent (limit to avoid spam)
-    alerts = data.get('alerts', [])[:5]
-    for alert_data in alerts:
-        alert = Alert(
-            server_id=server_id,
-            level='error',
-            source='agent',
-            message=alert_data.get('message', '')[:500]
-        )
-        db.session.add(alert)
+    # Only date filter: skip log lines whose embedded date is not today.
+    # All levels (INFO/WARN/ERROR/FATAL/CRITICAL) are accepted and displayed
+    # with their real level extracted from the log message.
+    import re
+    today_str = datetime.utcnow().strftime('%Y-%m-%d')
+    date_pattern = re.compile(r'\d{4}-\d{2}-\d{2}')
+    # Pattern to extract log level tag from EAI format: [INFO], [WARN], [ERRO], [ERROR], [FATAL], [CRITICAL]
+    level_tag_pattern = re.compile(r'\[(INFO|WARN|WARNING|ERRO|ERROR|FATAL|CRITICAL)\]', re.IGNORECASE)
 
-        # Also write agent alerts into the system log buffer for the System Log panel
+    alerts = data.get('alerts', [])[:50]
+    for alert_data in alerts:
+        msg = alert_data.get('message', '')
+
+        # Date filter: only today's log lines
+        date_match = date_pattern.search(msg)
+        if date_match:
+            log_date = date_match.group(0)
+            if log_date != today_str:
+                continue
+
+        # Extract real log level from message content
+        level_match = level_tag_pattern.search(msg)
+        if level_match:
+            raw_level = level_match.group(1).upper()
+            if raw_level in ('ERRO', 'ERROR'):
+                log_level = 'error'
+            elif raw_level in ('WARN', 'WARNING'):
+                log_level = 'warning'
+            elif raw_level in ('FATAL', 'CRITICAL'):
+                log_level = 'critical'
+            else:
+                log_level = 'info'
+        else:
+            log_level = 'info'
+
+        # Only persist error/critical level alerts to the Alert table
+        if log_level in ('error', 'critical'):
+            alert = Alert(
+                server_id=server_id,
+                level=log_level,
+                source='agent',
+                message=msg[:500]
+            )
+            db.session.add(alert)
+
+        # Write ALL levels into the system log buffer for the EAI System Log panel
         from app.api.websocket import ingest_agent_alert
-        ingest_agent_alert(server_id, alert_data.get('message', ''))
+        ingest_agent_alert(server_id, msg, log_level)
 
     db.session.commit()
 
@@ -571,6 +606,152 @@ def get_agents_status():
             'online': sum(1 for a in agents if a.get('agent_online')),
             'offline': sum(1 for a in agents if not a.get('agent_online')),
             'timestamp': datetime.utcnow().isoformat()
+        }
+    })
+
+
+@api_bp.route('/agent/eai-logs', methods=['POST'])
+def agent_eai_logs():
+    """
+    Receive EAI log parsing results from the Linux Agent (Phase 3).
+    The Agent on 163 monitors EAI log files locally via tail -F,
+    parses report records, and uploads them here for Oracle insertion.
+    This replaces the standalone eai_log_monitor SSH-based service on 165.
+    """
+    import logging
+    eai_logger = logging.getLogger('eai_logs')
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'code': 400, 'message': 'No data provided'}), 400
+
+    server_id = data.get('server_id')
+    schema = data.get('schema')
+    records = data.get('records', [])
+
+    if not schema:
+        return jsonify({'code': 400, 'message': 'schema is required'}), 400
+
+    if not records:
+        return jsonify({
+            'code': 200,
+            'message': 'No records to insert',
+            'data': {'inserted': 0, 'duplicates': 0}
+        })
+
+    # Database configuration for EAI schemas
+    # These match the original eai_log_monitor config.py ACC_DATABASE settings
+    EAI_DB_CONFIG = {
+        'host': '172.17.10.165',
+        'port': 1521,
+        'service': 'orcl.ecdag.com',
+        'schemas': {
+            'dpepp1': {'user': 'iplant_dpepp1', 'password': 'acc'},
+            'smt2': {'user': 'iplant_smt2', 'password': 'acc'},
+            'dpeps1': {'user': 'iplant_dpeps1', 'password': 'acc'}
+        }
+    }
+
+    schema_config = EAI_DB_CONFIG['schemas'].get(schema)
+    if not schema_config:
+        return jsonify({'code': 400, 'message': f'Unknown schema: {schema}'}), 400
+
+    inserted = 0
+    duplicates = 0
+    errors_list = []
+
+    try:
+        import cx_Oracle
+        dsn = f"{EAI_DB_CONFIG['host']}:{EAI_DB_CONFIG['port']}/{EAI_DB_CONFIG['service']}"
+        conn = cx_Oracle.connect(
+            user=schema_config['user'],
+            password=schema_config['password'],
+            dsn=dsn,
+            encoding='UTF-8'
+        )
+        cursor = conn.cursor()
+
+        for record in records:
+            try:
+                schb_number = record.get('schb_number', '')
+                if not schb_number:
+                    continue
+
+                is_success = record.get('is_success', True)
+                error_message = (record.get('error_message', '') or '')[:2000]
+                source_bill_no = record.get('source_bill_no', '') or 'UNKNOWN'
+
+                # MERGE INTO (upsert) - matches original db_handler.py logic exactly
+                sql = """
+                MERGE INTO ACC_ERP_REPORT_SUCCESS t
+                USING (SELECT :schb_number AS SCHB_NUMBER FROM DUAL) s
+                ON (t.SCHB_NUMBER = s.SCHB_NUMBER)
+                WHEN NOT MATCHED THEN
+                INSERT (ID, WONO, PACKID, PARTNO, CNT, LINE, SCHB_NUMBER,
+                        SOURCE_BILL_NO, REPORT_TIME, IS_SUCCESS, ERROR_MESSAGE)
+                VALUES (ACC_ERP_REPT_SUCC_SEQ.NEXTVAL, :wono, :packid, :partno,
+                        :cnt, :line, :schb_number, :source_bill_no,
+                        :report_time, :is_success, :error_message)
+                """
+
+                # Parse report_time
+                report_time_str = record.get('report_time', '')
+                report_time = None
+                if report_time_str:
+                    try:
+                        report_time = datetime.fromisoformat(report_time_str)
+                    except (ValueError, TypeError):
+                        report_time = datetime.utcnow()
+                else:
+                    report_time = datetime.utcnow()
+
+                cursor.execute(sql, {
+                    'schb_number': schb_number,
+                    'wono': source_bill_no,
+                    'packid': record.get('lot_number', '') or '',
+                    'source_bill_no': source_bill_no,
+                    'cnt': record.get('qty', 0) or 0,
+                    'partno': record.get('product_code', '') or 'UNKNOWN',
+                    'line': record.get('line', '') or '',
+                    'report_time': report_time,
+                    'is_success': 1 if is_success else 0,
+                    'error_message': error_message
+                })
+
+                if cursor.rowcount > 0:
+                    inserted += 1
+                else:
+                    duplicates += 1
+
+            except cx_Oracle.IntegrityError:
+                duplicates += 1
+            except cx_Oracle.Error as e:
+                errors_list.append(f"{schb_number}: {str(e)[:100]}")
+                eai_logger.warning(f"EAI record insert error: {e}, schb={schb_number}")
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    except Exception as e:
+        eai_logger.error(f"EAI database connection error for schema {schema}: {e}")
+        return jsonify({
+            'code': 500,
+            'message': f'Database error: {str(e)[:200]}',
+            'data': {'inserted': inserted, 'duplicates': duplicates}
+        }), 500
+
+    eai_logger.info(f"EAI logs received: schema={schema}, total={len(records)}, "
+                    f"inserted={inserted}, duplicates={duplicates}")
+
+    return jsonify({
+        'code': 200,
+        'message': 'EAI logs processed',
+        'data': {
+            'inserted': inserted,
+            'duplicates': duplicates,
+            'total': len(records),
+            'errors': errors_list[:5] if errors_list else []
         }
     })
 

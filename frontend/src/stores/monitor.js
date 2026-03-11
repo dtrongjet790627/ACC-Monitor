@@ -156,24 +156,35 @@ export const useMonitorStore = defineStore('monitor', () => {
   // 添加系统日志（从WebSocket接收）
   function addSystemLog(log) {
     // log format: {time, timestamp, level, server_id, message}
+    // Preserve timestamp and server_id for date filtering and display
+    const dateStr = log.timestamp ? log.timestamp.substring(0, 10) : ''
     systemLogs.value.unshift({
       time: log.time,
+      timestamp: log.timestamp || '',
+      date: dateStr,
       level: log.level,
+      server_id: log.server_id || '',
       message: log.message
     })
-    // 保持最多50条日志
-    if (systemLogs.value.length > 50) {
+    // 保持最多100条日志（所有级别）
+    if (systemLogs.value.length > 100) {
       systemLogs.value.pop()
     }
   }
 
   // 设置系统日志批量数据（初始加载）
   function setSystemLogs(logs) {
-    systemLogs.value = logs.map(log => ({
-      time: log.time,
-      level: log.level,
-      message: log.message
-    })).slice(0, 50)
+    systemLogs.value = logs.map(log => {
+      const dateStr = log.timestamp ? log.timestamp.substring(0, 10) : ''
+      return {
+        time: log.time,
+        timestamp: log.timestamp || '',
+        date: dateStr,
+        level: log.level,
+        server_id: log.server_id || '',
+        message: log.message
+      }
+    }).slice(0, 100)
   }
 
   // 获取格式化的系统日志（用于SystemLog组件）

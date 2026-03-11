@@ -249,14 +249,25 @@ class MonitorScheduler:
                 db.session.commit()
 
     def _scan_logs(self):
-        """Scan logs for alerts"""
+        """Scan logs for today's entries (all levels).
+
+        Only date filter is applied: skip lines whose embedded date is not today.
+        All levels (INFO/WARN/ERROR/FATAL/CRITICAL) are accepted and written to
+        the SystemLogBuffer for display in the EAI System Log panel.
+        The real log level is extracted from the message content.
+        """
         with self.app.app_context():
+            import re
             from app.services.log_service import LogService
             from app.api.websocket import broadcast_log_alert, broadcast_system_log
             from app.models import Alert
             from app import db
 
             log_service = LogService()
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            date_pattern = re.compile(r'\d{4}-\d{2}-\d{2}')
+            # Pattern to extract real log level from EAI format
+            level_tag_pattern = re.compile(r'\[(INFO|WARN|WARNING|ERRO|ERROR|FATAL|CRITICAL)\]', re.IGNORECASE)
 
             for server_id in SERVERS.keys():
                 server_config = SERVERS.get(server_id, {})
@@ -264,27 +275,50 @@ class MonitorScheduler:
                 alerts = log_service.scan_for_alerts(server_id)
 
                 for alert_data in alerts:
+                    msg = alert_data.get('message', '')
+
+                    # Date filter: only today's log lines
+                    date_match = date_pattern.search(msg)
+                    if date_match and date_match.group(0) != today_str:
+                        continue
+
+                    # Extract real log level from message content
+                    level_match = level_tag_pattern.search(msg)
+                    if level_match:
+                        raw_level = level_match.group(1).upper()
+                        if raw_level in ('ERRO', 'ERROR'):
+                            log_level = 'error'
+                        elif raw_level in ('WARN', 'WARNING'):
+                            log_level = 'warning'
+                        elif raw_level in ('FATAL', 'CRITICAL'):
+                            log_level = 'critical'
+                        else:
+                            log_level = 'info'
+                    else:
+                        # Unstructured logs: use the level from scan_for_alerts
+                        log_level = alert_data.get('level', 'info')
+
                     # Broadcast alert
                     broadcast_log_alert(
                         server_id,
-                        alert_data['level'],
+                        log_level,
                         alert_data['message']
                     )
 
-                    # Add system log for critical/error log alerts
-                    if alert_data['level'] in ['critical', 'error']:
-                        # Truncate long messages for display
-                        short_msg = alert_data['message'][:100] + '...' if len(alert_data['message']) > 100 else alert_data['message']
-                        log_entry = log_service.add_system_log(
-                            alert_data['level'],
-                            server_id,
-                            f"{server_name}: {short_msg}"
-                        )
-                        broadcast_system_log(log_entry)
+                    # Add ALL levels to system log for the EAI System Log panel
+                    short_msg = alert_data['message'][:100] + '...' if len(alert_data['message']) > 100 else alert_data['message']
+                    log_entry = log_service.add_system_log(
+                        log_level,
+                        server_id,
+                        f"{server_name}: {short_msg}"
+                    )
+                    broadcast_system_log(log_entry)
 
+                    # Only persist error/critical to the Alert table
+                    if log_level in ('error', 'critical'):
                         alert = Alert(
                             server_id=server_id,
-                            level=alert_data['level'],
+                            level=log_level,
                             source='log',
                             message=alert_data['message'][:500]
                         )

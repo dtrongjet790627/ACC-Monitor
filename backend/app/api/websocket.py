@@ -230,16 +230,17 @@ def broadcast_system_logs_batch(logs):
     })
 
 
-def ingest_agent_alert(server_id, message):
+def ingest_agent_alert(server_id, message, level='info'):
     """
-    Write an agent-reported alert into the system log buffer and broadcast it.
-    Called from the /agent/report route so agent alerts appear in the System Log panel.
+    Write an agent-reported log entry into the system log buffer and broadcast it.
+    Called from the /agent/report route so agent logs appear in the EAI System Log panel.
+    Level is extracted from the log message content by the caller (info/warning/error/critical).
     """
     from config.settings import SERVERS
     server_config = SERVERS.get(server_id, {})
     server_name = server_config.get('name_cn', server_config.get('name', server_id))
     short_msg = message[:100] + '...' if len(message) > 100 else message
-    log_entry = log_service.add_system_log('warning', server_id, f"{server_name}: {short_msg}")
+    log_entry = log_service.add_system_log(level, server_id, f"{server_name}: {short_msg}")
     broadcast_system_log(log_entry)
 
 

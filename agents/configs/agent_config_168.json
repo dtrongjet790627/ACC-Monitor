@@ -1,0 +1,14 @@
+{
+  "monitor_url": "http://172.17.10.165:5004",
+  "report_interval": 30,
+  "server_id": "168",
+  "log_level": "INFO",
+  "acc_drive": "D",
+  "processes": ["Oracle"],
+  "services": [
+    {"service_name": "ACC.Server", "display_name": "ACC.Server"},
+    {"service_name": "ACC.MQ", "display_name": "ACC.MQ"},
+    {"service_name": "ACC.PackServer", "display_name": "Pack.Server"},
+    {"service_name": "ACC.LogReader", "display_name": "LogReader"}
+  ]
+}

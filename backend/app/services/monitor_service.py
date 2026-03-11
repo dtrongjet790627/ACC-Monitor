@@ -1774,22 +1774,55 @@ class MonitorService:
 
     def _get_linux_error_logs(self, server_id: str, log_path: str,
                                container_name: str, date_str: str) -> List[Dict]:
-        """Get error logs from Linux server for today"""
+        """Get error logs from Linux server for today.
+
+        Priority:
+          1. Agent-reported container_error_logs (Phase 2) -- instant, no SSH
+          2. SSH fallback with timeout protection (Phase 1)
+
+        Uses exec_ssh_command (not raw client.exec_command) to leverage
+        connection pooling, backoff protection, and channel timeout safety.
+        All SSH commands are wrapped with Linux 'timeout' to prevent hangs."""
         errors = []
 
-        client = self.get_ssh_client(server_id)
-        if not client:
-            return errors
-
         try:
-            # Get Docker container logs for today
-            if container_name:
-                cmd = f'docker logs {container_name} --since {date_str}T00:00:00 2>&1 | grep -iE "error|exception|failed" | tail -20'
-            else:
-                cmd = f'grep -iE "error|exception|failed" {log_path}/*.log 2>/dev/null | tail -20'
+            # -----------------------------------------------------------
+            # Priority 1: Use Agent-reported container error logs if fresh
+            # Agent collects these locally via 'docker logs' on the server,
+            # eliminating the need for SSH remote docker logs calls.
+            # -----------------------------------------------------------
+            if container_name and self._has_fresh_agent_data(server_id):
+                agent_data = self.agent_data.get_agent_data(server_id)
+                if agent_data:
+                    container_logs = agent_data.get('container_error_logs', {})
+                    if container_name in container_logs:
+                        agent_errors = container_logs[container_name]
+                        for err in agent_errors:
+                            msg = err.get('message', '')
+                            if msg and len(msg) > 10:
+                                errors.append({
+                                    'message': msg[:300],
+                                    'level': self._classify_error_level(msg),
+                                    'timestamp': err.get('timestamp', date_str),
+                                    'source': container_name,
+                                    'data_source': 'agent'
+                                })
+                        if errors:
+                            logger.debug(f"[AgentLogs] {server_id}/{container_name}: "
+                                         f"got {len(errors)} errors from agent data")
+                            return errors
+                        # Agent data exists but no errors -- that is a valid result
+                        return errors
 
-            stdin, stdout, stderr = client.exec_command(cmd, timeout=15)
-            output = stdout.read().decode('utf-8', errors='ignore')
+            # -----------------------------------------------------------
+            # Priority 2: SSH fallback with timeout protection
+            # -----------------------------------------------------------
+            if container_name:
+                cmd = f'timeout 10 docker logs {container_name} --since {date_str}T00:00:00 2>&1 | grep -iE "error|exception|failed" | tail -20'
+            else:
+                cmd = f'timeout 10 grep -iE "error|exception|failed" {log_path}/*.log 2>/dev/null | tail -20'
+
+            output = self.exec_ssh_command(server_id, cmd, timeout=20)
 
             if output:
                 lines = output.strip().split('\n')
@@ -1805,8 +1838,7 @@ class MonitorService:
                         })
 
         except Exception as e:
-            print(f"Error reading Linux logs: {e}")
-        # Note: Do NOT close client here - it's managed by the connection pool
+            logger.warning(f"Error reading Linux logs for {server_id}: {e}")
 
         return errors
 

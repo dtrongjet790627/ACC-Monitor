@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ACC Monitor - Linux Agent
+ACC Monitor - Linux Agent (163 EAI Server Edition)
+Compatible with Python 3.6.8 (CentOS 7)
+
 Collects server metrics, Docker container status, container error logs,
 and EAI log monitoring (real-time tail -F with log parsing).
 
 Phase 2: Added get_container_error_logs() for docker logs error extraction
 Phase 3: Added EaiLogWatcher for real-time EAI log monitoring (replaces
          the standalone eai_log_monitor SSH-based service on 165)
+
+Changes from acc_agent.py:
+  - Removed 'requests' dependency -> uses urllib.request
+  - Removed 'dataclasses' dependency -> uses plain classes (Python 3.6 compat)
+  - Fixed EAI log file paths: uses backslash in filenames (matches 163 actual files)
+  - Fixed server_url to http://172.17.10.165:5004
+  - Log output to /opt/acc-monitor-agent/acc_agent.log (same dir as old agent)
 """
 import os
 import re
@@ -19,52 +28,110 @@ import logging
 import subprocess
 import threading
 import queue
-import requests
+import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
-from dataclasses import dataclass, asdict
-from typing import Optional, Dict, List, Tuple
+from logging.handlers import RotatingFileHandler
 
-# Configuration
+# typing imports (Python 3.6 compatible)
+try:
+    from typing import Optional, Dict, List, Tuple
+except ImportError:
+    pass
+
+# ---------------------------------------------------------------------------
+# Constants & Configuration
+# ---------------------------------------------------------------------------
+SCRIPT_DIR = Path(__file__).parent.resolve()
+CONFIG_FILE = SCRIPT_DIR / 'agent_config.json'
+LOG_FILE = SCRIPT_DIR / 'acc_agent.log'
+VERSION = '3.0.0'
+
 CONFIG = {
-    'server_url': 'http://172.17.10.xxx:5000',  # Monitor center URL
-    'server_id': '163',  # This server's ID (EAI)
-    'report_interval': 30,  # Seconds between reports
-    'containers': ['hulu-eai', 'redis', 'portainer', 'frpc'],
+    'server_url': 'http://172.17.10.165:5004',
+    'server_id': '163',
+    'report_interval': 30,
+    'containers': ['hulu-eai', 'redis'],
     'log_path': '/var/eai/logs',
     'log_level': 'INFO',
     # EAI log monitoring config
     'eai_monitor_enabled': True,
     'eai_log_files': {
-        'FLOW_DP-EPS/IPA MES报工接口.log': {
+        'FLOW_DP-EPS\\IPA MES\u62a5\u5de5\u63a5\u53e3.log': {
             'schema': 'dpeps1',
             'description': 'DP-EPS IPA'
         },
-        'FLOW_SMT/MID-Line2MES报工接口.log': {
+        'FLOW_SMT\\MID-Line2MES\u62a5\u5de5\u63a5\u53e3.log': {
             'schema': 'smt2',
             'description': 'SMT Line2'
         },
-        'FLOW_DP-SMT/MID/EPP MES报工接口.log': {
+        'FLOW_DP-SMT\\MID\\EPP MES\u62a5\u5de5\u63a5\u53e3.log': {
             'schema': 'dpepp1',
             'description': 'DP-SMT MID EPP'
         }
     },
-    'eai_report_url': None,  # Will default to server_url + /api/agent/eai-logs
+    'eai_report_url': None,
     'eai_batch_size': 10,
-    'eai_batch_timeout': 5,  # seconds
-    'eai_catchup_lines': 1000  # lines to read on startup for catch-up
+    'eai_batch_timeout': 5,
+    'eai_catchup_lines': 1000
 }
 
-# Setup logging
-logging.basicConfig(
-    level=getattr(logging, CONFIG['log_level']),
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('/var/log/acc_agent.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+def setup_logging(level_name='INFO'):
+    """Configure rotating file + console logging."""
+    _logger = logging.getLogger('acc_agent')
+    _logger.setLevel(getattr(logging, level_name.upper(), logging.INFO))
+    if _logger.handlers:
+        return _logger
+
+    fmt = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s',
+                            datefmt='%Y-%m-%d %H:%M:%S')
+
+    fh = RotatingFileHandler(str(LOG_FILE), maxBytes=5 * 1024 * 1024,
+                             backupCount=3, encoding='utf-8')
+    fh.setFormatter(fmt)
+    _logger.addHandler(fh)
+
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(fmt)
+    _logger.addHandler(ch)
+
+    return _logger
+
+
+logger = setup_logging(CONFIG.get('log_level', 'INFO'))
+
+
+# ---------------------------------------------------------------------------
+# HTTP helper (replaces requests library)
+# ---------------------------------------------------------------------------
+
+def http_post_json(url, data, timeout=10):
+    """POST JSON data using urllib (no external dependencies)."""
+    payload = json.dumps(data, ensure_ascii=False).encode('utf-8')
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={'Content-Type': 'application/json; charset=utf-8'},
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode('utf-8')
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        logger.error("HTTP POST %s -> %s %s", url, e.code, e.reason)
+        raise
+    except urllib.error.URLError as e:
+        logger.error("HTTP POST %s -> URLError: %s", url, e.reason)
+        raise
+    except Exception as e:
+        logger.error("HTTP POST %s -> %s", url, e)
+        raise
 
 
 # =============================================================================
@@ -72,41 +139,60 @@ logger = logging.getLogger(__name__)
 # Preserves 100% functional equivalence with the original parser
 # =============================================================================
 
-@dataclass
-class TriggerData:
+class TriggerData(object):
     """Trigger data extracted from db trigger get data"""
-    line: str           # LINE field
-    pack_id: str        # PACKID field
-    wono: str           # WONO field
-    cnt: str            # CNT field
-    part_no: str        # PARTNO field
-    raw_data: str       # Original JSON
+    def __init__(self, line='', pack_id='', wono='', cnt='', part_no='', raw_data=''):
+        self.line = line
+        self.pack_id = pack_id
+        self.wono = wono
+        self.cnt = cnt
+        self.part_no = part_no
+        self.raw_data = raw_data
 
 
-@dataclass
-class ReportRecord:
+class ReportRecord(object):
     """Parsed report record"""
-    schb_number: str        # Report bill number (from response)
-    source_bill_no: str     # Source bill number (FMoBillNo from request)
-    qty: float              # Report quantity
-    product_code: str       # Product code
-    process_code: str       # Process code
-    report_time: str        # ISO format timestamp
-    worker_code: str        # Worker code
-    lot_number: str         # Lot number (FLot.FNumber)
-    line: str               # Production line (from trigger data)
-    raw_request: str        # Original request JSON
-    raw_response: str       # Original response JSON
-    is_success: bool        # Whether the report succeeded
-    error_message: str = '' # Error message (for failures)
-    schema: str = ''        # Target database schema
+    def __init__(self, schb_number='', source_bill_no='', qty=0.0,
+                 product_code='', process_code='', report_time='',
+                 worker_code='', lot_number='', line='',
+                 raw_request='', raw_response='', is_success=True,
+                 error_message='', schema=''):
+        self.schb_number = schb_number
+        self.source_bill_no = source_bill_no
+        self.qty = qty
+        self.product_code = product_code
+        self.process_code = process_code
+        self.report_time = report_time
+        self.worker_code = worker_code
+        self.lot_number = lot_number
+        self.line = line
+        self.raw_request = raw_request
+        self.raw_response = raw_response
+        self.is_success = is_success
+        self.error_message = error_message
+        self.schema = schema
 
     def to_dict(self):
         """Convert to dictionary for JSON serialization"""
-        return asdict(self)
+        return {
+            'schb_number': self.schb_number,
+            'source_bill_no': self.source_bill_no,
+            'qty': self.qty,
+            'product_code': self.product_code,
+            'process_code': self.process_code,
+            'report_time': self.report_time,
+            'worker_code': self.worker_code,
+            'lot_number': self.lot_number,
+            'line': self.line,
+            'raw_request': self.raw_request,
+            'raw_response': self.raw_response,
+            'is_success': self.is_success,
+            'error_message': self.error_message,
+            'schema': self.schema
+        }
 
 
-class EaiLogParser:
+class EaiLogParser(object):
     """
     EAI log parser - functionally equivalent to eai_log_monitor/log_parser.py
 
@@ -157,10 +243,10 @@ class EaiLogParser:
     }
 
     def __init__(self):
-        self._trigger_queues: Dict[str, list] = {}
-        self._current_request: Optional[Tuple[datetime, dict, str, str]] = None
+        self._trigger_queues = {}  # type: Dict[str, list]
+        self._current_request = None  # type: Optional[Tuple]
 
-    def parse_line(self, line: str) -> Optional[ReportRecord]:
+    def parse_line(self, line):
         """Parse a single log line, return ReportRecord if a complete record is found"""
         try:
             line = line.strip()
@@ -203,10 +289,10 @@ class EaiLogParser:
 
             return None
         except Exception as e:
-            logger.warning(f"Parse line error: {e}, content: {line[:100]}...")
+            logger.warning("Parse line error: %s, content: %s...", e, line[:100])
             return None
 
-    def _handle_trigger_data(self, json_str: str) -> None:
+    def _handle_trigger_data(self, json_str):
         """Process trigger data (db trigger get data)"""
         try:
             data_list = json.loads(json_str)
@@ -229,14 +315,15 @@ class EaiLogParser:
             if wono not in self._trigger_queues:
                 self._trigger_queues[wono] = []
             self._trigger_queues[wono].append(trigger)
-            logger.debug(f"Enqueue trigger: LINE={trigger.line}, WONO={wono}, queue depth={len(self._trigger_queues[wono])}")
+            logger.debug("Enqueue trigger: LINE=%s, WONO=%s, queue depth=%d",
+                         trigger.line, wono, len(self._trigger_queues[wono]))
 
-        except json.JSONDecodeError as e:
-            logger.warning(f"Trigger JSON parse error: {e}")
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("Trigger JSON parse error: %s", e)
         except Exception as e:
-            logger.warning(f"Trigger data error: {e}")
+            logger.warning("Trigger data error: %s", e)
 
-    def _handle_request(self, timestamp: datetime, json_str: str):
+    def _handle_request(self, timestamp, json_str):
         """Process kingdee request"""
         data = None
         source_bill_no = None
@@ -247,11 +334,11 @@ class EaiLogParser:
                 try:
                     inner_data = json.loads(data['data'])
                     data['_parsed_data'] = inner_data
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, ValueError):
                     pass
             source_bill_no = self._extract_source_bill_no(data)
 
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             data, source_bill_no = self._extract_from_truncated_json(json_str)
             if not data:
                 fallback_trigger = self._pop_oldest_trigger_any()
@@ -289,7 +376,7 @@ class EaiLogParser:
 
         self._current_request = (timestamp, data, source_bill_no, line_name)
 
-    def _handle_response(self, timestamp: datetime, json_str: str) -> Optional[ReportRecord]:
+    def _handle_response(self, timestamp, json_str):
         """Process kingdee response, pair with current request"""
         try:
             use_trigger_fallback = False
@@ -335,7 +422,7 @@ class EaiLogParser:
                     if not schb_number:
                         return None
                     return self._build_record(req_data, resp_data, json_str, schb_number, source_bill_no, line_name)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, ValueError):
                     schb_number = self._extract_schb_from_truncated(json_str)
                     if schb_number:
                         return self._build_record(req_data, {}, json_str, schb_number, source_bill_no, line_name)
@@ -354,10 +441,10 @@ class EaiLogParser:
                 return None
 
         except Exception as e:
-            logger.warning(f"Response handling error: {e}")
+            logger.warning("Response handling error: %s", e)
             return None
 
-    def _handle_lua_error(self, timestamp: datetime, json_str: str, raw_line: str) -> Optional[ReportRecord]:
+    def _handle_lua_error(self, timestamp, json_str, raw_line):
         """Process Lua execution error"""
         try:
             error_message = ''
@@ -368,14 +455,14 @@ class EaiLogParser:
                 data = json.loads(json_str)
                 if 'errorMsg' in data:
                     error_msg = data['errorMsg']
-                    if 'ERP报工返回失败' in error_msg:
+                    if 'ERP\u62a5\u5de5\u8fd4\u56de\u5931\u8d25' in error_msg:
                         nested_json_match = re.search(r'\{.*"Errors".*\}', error_msg)
                         if nested_json_match:
                             nested_error = self._extract_error_message(nested_json_match.group(0))
-                            if nested_error and nested_error != '执行错误':
+                            if nested_error and nested_error != '\u6267\u884c\u9519\u8bef':
                                 error_message = nested_error
                             else:
-                                error_message = error_msg.split('ERP报工返回失败')[1] if 'ERP报工返回失败' in error_msg else error_msg
+                                error_message = error_msg.split('ERP\u62a5\u5de5\u8fd4\u56de\u5931\u8d25')[1] if 'ERP\u62a5\u5de5\u8fd4\u56de\u5931\u8d25' in error_msg else error_msg
                         else:
                             error_message = error_msg
                     else:
@@ -386,10 +473,10 @@ class EaiLogParser:
                         inner_data = json.loads(data['data']) if isinstance(data['data'], str) else data['data']
                         line_name = inner_data.get('LINE', '')
                         source_bill_no = inner_data.get('WONO', '')
-                    except:
+                    except Exception:
                         pass
 
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, ValueError):
                 error_msg_match = re.search(r'"errorMsg"\s*:\s*"([^"]*(?:\\.[^"]*)*)"', json_str)
                 if error_msg_match:
                     error_message = error_msg_match.group(1).replace('\\n', ' ').replace('\\r', ' ')
@@ -416,12 +503,12 @@ class EaiLogParser:
                 if len(error_message) > 500:
                     error_message = error_message[:500] + '...'
             else:
-                error_message = 'Lua执行错误'
+                error_message = 'Lua\u6267\u884c\u9519\u8bef'
 
             if self._current_request and self._current_request[2] == source_bill_no:
                 self._current_request = None
 
-            fail_id = f"FAIL_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            fail_id = "FAIL_%s" % datetime.now().strftime('%Y%m%d%H%M%S%f')
 
             return ReportRecord(
                 schb_number=fail_id,
@@ -439,12 +526,12 @@ class EaiLogParser:
                 error_message=error_message
             )
         except Exception as e:
-            logger.warning(f"Lua error handling failed: {e}")
+            logger.warning("Lua error handling failed: %s", e)
             return None
 
-    # --- Helper methods (ported from original log_parser.py) ---
+    # --- Helper methods ---
 
-    def _pop_trigger_for_wono(self, wono: str) -> Optional[TriggerData]:
+    def _pop_trigger_for_wono(self, wono):
         q = self._trigger_queues.get(wono)
         if q:
             trigger = q.pop(0)
@@ -453,7 +540,7 @@ class EaiLogParser:
             return trigger
         return None
 
-    def _pop_oldest_trigger_any(self) -> Optional[TriggerData]:
+    def _pop_oldest_trigger_any(self):
         for wono, q in list(self._trigger_queues.items()):
             if q:
                 trigger = q.pop(0)
@@ -462,7 +549,7 @@ class EaiLogParser:
                 return trigger
         return None
 
-    def _extract_source_bill_no(self, data: dict) -> Optional[str]:
+    def _extract_source_bill_no(self, data):
         possible_keys = ['FMoBillNo', 'FSrcBillNo', 'FBillNo', 'SCHB_NUMBER', 'schb_number', 'BillNo']
         search_data = data.get('_parsed_data', data)
         for key in possible_keys:
@@ -496,7 +583,7 @@ class EaiLogParser:
                     return result
         return None
 
-    def _extract_from_truncated_json(self, json_str: str) -> Tuple[Optional[dict], Optional[str]]:
+    def _extract_from_truncated_json(self, json_str):
         extracted = {'_truncated': True, '_raw_request': json_str}
         source_bill_no = None
         for key in ['FMoBillNo', 'FSrcBillNo']:
@@ -528,7 +615,7 @@ class EaiLogParser:
         }
         return extracted, source_bill_no
 
-    def _extract_schb_number_from_response(self, data: dict) -> Optional[str]:
+    def _extract_schb_number_from_response(self, data):
         possible_keys = ['FBillNo', 'Number', 'BillNo', 'SCHB_NUMBER']
         if 'Result' in data and isinstance(data['Result'], dict):
             result = data['Result']
@@ -541,7 +628,7 @@ class EaiLogParser:
                     return str(result[key])
         return self._recursive_search(data, possible_keys)
 
-    def _extract_schb_from_truncated(self, json_str: str) -> Optional[str]:
+    def _extract_schb_from_truncated(self, json_str):
         patterns = [
             re.compile(r'"Number"\s*:\s*"([^"]+)"', re.IGNORECASE),
             re.compile(r'"FBillNo"\s*:\s*"([^"]+)"', re.IGNORECASE),
@@ -554,7 +641,7 @@ class EaiLogParser:
                 return m.group(1)
         return None
 
-    def _extract_field(self, data: dict, keys: List[str], default=None):
+    def _extract_field(self, data, keys, default=None):
         search_data = data.get('_parsed_data', data)
         for key in keys:
             if key in search_data:
@@ -578,7 +665,7 @@ class EaiLogParser:
                     return value
         return default
 
-    def _extract_error_message(self, json_str: str) -> str:
+    def _extract_error_message(self, json_str):
         try:
             data = json.loads(json_str)
             if 'Result' in data and isinstance(data['Result'], dict):
@@ -596,12 +683,12 @@ class EaiLogParser:
                                         messages.append(msg)
                             if messages:
                                 return '; '.join(messages)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             pass
         matches = self.ERROR_MESSAGE_PATTERN.findall(json_str)
         if matches:
             return matches[0].replace('\\r\\n', ' ').replace('\\n', ' ').replace('\\r', ' ').strip()
-        return '执行错误'
+        return '\u6267\u884c\u9519\u8bef'
 
     def _build_record(self, req_data, resp_data, raw_response, schb_number, source_bill_no, line_name=''):
         try:
@@ -647,7 +734,7 @@ class EaiLogParser:
                 is_success=True
             )
         except Exception as e:
-            logger.warning(f"Build record error: {e}")
+            logger.warning("Build record error: %s", e)
             return None
 
     def _build_failure_record(self, req_data, raw_response, source_bill_no, line_name, error_message):
@@ -674,7 +761,7 @@ class EaiLogParser:
             except ValueError:
                 qty = 0
 
-        fail_id = f"FAIL_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        fail_id = "FAIL_%s" % datetime.now().strftime('%Y%m%d%H%M%S%f')
 
         return ReportRecord(
             schb_number=fail_id,
@@ -698,14 +785,13 @@ class EaiLogParser:
 # Reads local files directly using tail -F subprocess
 # =============================================================================
 
-class EaiLogWatcher:
+class EaiLogWatcher(object):
     """
     Watches a single EAI log file using tail -F subprocess.
     Runs locally on the 163 server -- no SSH needed.
     """
 
-    def __init__(self, log_file: str, schema: str, description: str,
-                 log_dir: str, catchup_lines: int = 1000):
+    def __init__(self, log_file, schema, description, log_dir, catchup_lines=1000):
         self.log_file = log_file
         self.schema = schema
         self.description = description
@@ -713,17 +799,18 @@ class EaiLogWatcher:
         self.catchup_lines = catchup_lines
 
         self._parser = EaiLogParser()
-        self._record_queue: queue.Queue = queue.Queue()
+        self._record_queue = queue.Queue()
         self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._process: Optional[subprocess.Popen] = None
+        self._thread = None
+        self._process = None
 
     def start(self):
         """Start watching the log file"""
         self._running = True
-        self._thread = threading.Thread(target=self._watch_loop, daemon=True)
+        self._thread = threading.Thread(target=self._watch_loop)
+        self._thread.daemon = True
         self._thread.start()
-        logger.info(f"[EAI] Started watcher: {self.description} ({self.log_file})")
+        logger.info("[EAI] Started watcher: %s (%s) -> %s", self.description, self.log_file, self.full_path)
 
     def stop(self):
         """Stop watching"""
@@ -739,9 +826,9 @@ class EaiLogWatcher:
                     pass
         if self._thread:
             self._thread.join(timeout=5)
-        logger.info(f"[EAI] Stopped watcher: {self.description}")
+        logger.info("[EAI] Stopped watcher: %s", self.description)
 
-    def get_records(self) -> List[ReportRecord]:
+    def get_records(self):
         """Get parsed records (non-blocking)"""
         records = []
         while True:
@@ -757,7 +844,7 @@ class EaiLogWatcher:
         while self._running:
             try:
                 if not os.path.exists(self.full_path):
-                    logger.warning(f"[EAI] Log file not found: {self.full_path}, retrying in 10s...")
+                    logger.warning("[EAI] Log file not found: %s, retrying in 10s...", self.full_path)
                     time.sleep(10)
                     continue
 
@@ -768,30 +855,33 @@ class EaiLogWatcher:
                 self._tail_follow()
 
             except Exception as e:
-                logger.error(f"[EAI] Watcher error for {self.description}: {e}")
+                logger.error("[EAI] Watcher error for %s: %s", self.description, e)
 
             if self._running:
-                logger.warning(f"[EAI] {self.description} tail process ended, reconnecting in 5s...")
+                logger.warning("[EAI] %s tail process ended, reconnecting in 5s...", self.description)
                 time.sleep(5)
 
     def _catchup(self):
         """Read recent lines for catch-up after restart"""
         try:
-            cmd = f'tail -n {self.catchup_lines} "{self.full_path}"'
+            cmd = 'tail -n %d "%s"' % (self.catchup_lines, self.full_path)
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=30
+                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=30
             )
-            if result.stdout:
+            stdout_text = result.stdout.decode('utf-8', errors='replace')
+            if stdout_text:
                 count = 0
-                for line in result.stdout.splitlines():
+                for line in stdout_text.splitlines():
                     record = self._parser.parse_line(line)
                     if record:
                         record.schema = self.schema
                         self._record_queue.put(record)
                         count += 1
-                logger.info(f"[EAI] Catchup complete for {self.description}: {count} records from {self.catchup_lines} lines")
+                logger.info("[EAI] Catchup complete for %s: %d records from %d lines",
+                            self.description, count, self.catchup_lines)
         except Exception as e:
-            logger.warning(f"[EAI] Catchup error for {self.description}: {e}")
+            logger.warning("[EAI] Catchup error for %s: %s", self.description, e)
 
     def _tail_follow(self):
         """Follow log file using tail -F (handles file rotation)"""
@@ -801,16 +891,18 @@ class EaiLogWatcher:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1  # Line buffered
+                bufsize=1
             )
 
-            logger.info(f"[EAI] tail -F started for {self.description} (pid={self._process.pid})")
+            logger.info("[EAI] tail -F started for %s (pid=%d)", self.description, self._process.pid)
 
-            for line in iter(self._process.stdout.readline, ''):
+            for raw_line in iter(self._process.stdout.readline, b''):
                 if not self._running:
                     break
-                line = line.rstrip('\n')
+                try:
+                    line = raw_line.decode('utf-8', errors='replace').rstrip('\n')
+                except Exception:
+                    continue
                 if line:
                     record = self._parser.parse_line(line)
                     if record:
@@ -818,7 +910,7 @@ class EaiLogWatcher:
                         self._record_queue.put(record)
 
         except Exception as e:
-            logger.error(f"[EAI] tail -F error for {self.description}: {e}")
+            logger.error("[EAI] tail -F error for %s: %s", self.description, e)
         finally:
             if self._process:
                 try:
@@ -836,18 +928,18 @@ class EaiLogWatcher:
 # EAI Log Monitor Manager
 # =============================================================================
 
-class EaiLogMonitorManager:
+class EaiLogMonitorManager(object):
     """
     Manages multiple EaiLogWatcher instances and batches records
     for HTTP upload to the monitoring center.
     """
 
-    def __init__(self, config: dict, report_url: str):
+    def __init__(self, config, report_url):
         self.config = config
         self.report_url = report_url
-        self._watchers: Dict[str, EaiLogWatcher] = {}
+        self._watchers = {}
         self._running = False
-        self._batch_thread: Optional[threading.Thread] = None
+        self._batch_thread = None
         self._stats = {
             'total_records': 0,
             'uploaded_records': 0,
@@ -873,9 +965,10 @@ class EaiLogMonitorManager:
             watcher.start()
 
         # Start batch upload thread
-        self._batch_thread = threading.Thread(target=self._batch_upload_loop, daemon=True)
+        self._batch_thread = threading.Thread(target=self._batch_upload_loop)
+        self._batch_thread.daemon = True
         self._batch_thread.start()
-        logger.info(f"[EAI] Monitor manager started with {len(self._watchers)} watchers")
+        logger.info("[EAI] Monitor manager started with %d watchers", len(self._watchers))
 
     def stop(self):
         """Stop all watchers and the batch thread"""
@@ -884,9 +977,9 @@ class EaiLogMonitorManager:
             watcher.stop()
         if self._batch_thread:
             self._batch_thread.join(timeout=10)
-        logger.info(f"[EAI] Monitor manager stopped. Stats: {self._stats}")
+        logger.info("[EAI] Monitor manager stopped. Stats: %s", self._stats)
 
-    def get_stats(self) -> dict:
+    def get_stats(self):
         """Get monitoring statistics"""
         return dict(self._stats)
 
@@ -894,8 +987,7 @@ class EaiLogMonitorManager:
         """Collect records from all watchers and upload in batches"""
         batch_size = self.config.get('eai_batch_size', 10)
         batch_timeout = self.config.get('eai_batch_timeout', 5)
-        # Per-schema batch buffers
-        batch_records: Dict[str, List[dict]] = {}
+        batch_records = {}
         last_upload_time = time.time()
 
         while self._running:
@@ -929,10 +1021,10 @@ class EaiLogMonitorManager:
                 time.sleep(0.5)
 
             except Exception as e:
-                logger.error(f"[EAI] Batch upload loop error: {e}")
+                logger.error("[EAI] Batch upload loop error: %s", e)
                 time.sleep(1)
 
-    def _upload_records(self, batch_records: Dict[str, List[dict]]):
+    def _upload_records(self, batch_records):
         """Upload batched records to the monitoring center"""
         for schema, records in list(batch_records.items()):
             if not records:
@@ -945,24 +1037,18 @@ class EaiLogMonitorManager:
                     'timestamp': datetime.utcnow().isoformat()
                 }
 
-                response = requests.post(
-                    self.report_url,
-                    json=payload,
-                    headers={'Content-Type': 'application/json'},
-                    timeout=15
-                )
-                response.raise_for_status()
+                resp_data = http_post_json(self.report_url, payload, timeout=15)
 
-                resp_data = response.json()
-                inserted = resp_data.get('data', {}).get('inserted', 0)
+                inserted = resp_data.get('data', {}).get('inserted', 0) if resp_data else 0
                 self._stats['uploaded_records'] += inserted
 
-                logger.info(f"[EAI] Uploaded {len(records)} records to schema {schema}, inserted: {inserted}")
+                logger.info("[EAI] Uploaded %d records to schema %s, inserted: %d",
+                            len(records), schema, inserted)
                 batch_records[schema] = []  # Clear only on success
 
             except Exception as e:
                 self._stats['failed_uploads'] += 1
-                logger.error(f"[EAI] Upload failed for schema {schema}: {e}")
+                logger.error("[EAI] Upload failed for schema %s: %s", schema, e)
                 # Keep records in buffer for retry next cycle
 
 
@@ -970,14 +1056,14 @@ class EaiLogMonitorManager:
 # Main Agent Class
 # =============================================================================
 
-class AccLinuxAgent:
+class AccLinuxAgent(object):
     """Linux monitoring agent for Docker containers and EAI log monitoring"""
 
     def __init__(self, config):
         self.config = config
         self.server_url = config['server_url']
         self.server_id = config['server_id']
-        self._eai_manager: Optional[EaiLogMonitorManager] = None
+        self._eai_manager = None
 
     def run_command(self, cmd):
         """Run shell command and return output"""
@@ -985,49 +1071,70 @@ class AccLinuxAgent:
             result = subprocess.run(
                 cmd,
                 shell=True,
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 timeout=30
             )
-            return result.stdout.strip()
+            return result.stdout.decode('utf-8', errors='replace').strip()
         except Exception as e:
-            logger.error(f"Error running command '{cmd}': {e}")
+            logger.error("Error running command '%s': %s", cmd, e)
             return ""
 
     def get_cpu_usage(self):
-        """Get CPU usage percentage"""
+        """Get CPU usage from /proc/stat (no external tools)"""
         try:
-            output = self.run_command(
-                "top -bn1 | grep 'Cpu(s)' | awk '{print $2}'"
-            )
-            return float(output) if output else 0
-        except:
-            return 0
+            with open('/proc/stat', 'r') as f:
+                line = f.readline()
+            parts = line.split()
+            # user, nice, system, idle, iowait, irq, softirq, steal
+            idle = int(parts[4])
+            total = sum(int(x) for x in parts[1:])
+            # Need two samples
+            time.sleep(0.1)
+            with open('/proc/stat', 'r') as f:
+                line2 = f.readline()
+            parts2 = line2.split()
+            idle2 = int(parts2[4])
+            total2 = sum(int(x) for x in parts2[1:])
+            diff_idle = idle2 - idle
+            diff_total = total2 - total
+            if diff_total == 0:
+                return 0.0
+            return round((1.0 - float(diff_idle) / float(diff_total)) * 100.0, 1)
+        except Exception:
+            return 0.0
 
     def get_memory_usage(self):
-        """Get memory usage percentage"""
+        """Get memory usage from /proc/meminfo (no external tools)"""
         try:
-            output = self.run_command(
-                "free | grep Mem | awk '{print $3/$2 * 100.0}'"
-            )
-            return round(float(output), 2) if output else 0
-        except:
-            return 0
+            info = {}
+            with open('/proc/meminfo', 'r') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        key = parts[0].rstrip(':')
+                        info[key] = int(parts[1])
+            total = info.get('MemTotal', 1)
+            available = info.get('MemAvailable', info.get('MemFree', 0))
+            used_pct = round((1.0 - float(available) / float(total)) * 100.0, 1)
+            return used_pct
+        except Exception:
+            return 0.0
 
     def get_disk_usage(self, path='/'):
         """Get disk usage percentage"""
         try:
             output = self.run_command(
-                f"df {path} | tail -1 | awk '{{print $5}}' | tr -d '%'"
+                "df %s | tail -1 | awk '{print $5}' | tr -d '%%'" % path
             )
             return float(output) if output else 0
-        except:
+        except Exception:
             return 0
 
     def get_container_status(self):
         """Get Docker container status"""
         containers = []
-        monitored = self.config['containers']
+        monitored = self.config.get('containers', [])
 
         for container_name in monitored:
             container_info = {
@@ -1041,8 +1148,7 @@ class AccLinuxAgent:
             }
 
             try:
-                # Get container status
-                inspect_cmd = f"docker inspect {container_name} 2>/dev/null"
+                inspect_cmd = "docker inspect %s 2>/dev/null" % container_name
                 output = self.run_command(inspect_cmd)
 
                 if output:
@@ -1055,8 +1161,8 @@ class AccLinuxAgent:
                         container_info['status'] = 'running' if state.get('Running') else 'stopped'
                         container_info['restart_count'] = container.get('RestartCount', 0)
 
-                        # Get resource usage
-                        stats_cmd = f"docker stats {container_name} --no-stream --format '{{{{.CPUPerc}}}}|{{{{.MemUsage}}}}'"
+                        stats_cmd = ("timeout 5 docker stats %s --no-stream "
+                                     "--format '{{.CPUPerc}}|{{.MemUsage}}'") % container_name
                         stats = self.run_command(stats_cmd)
 
                         if stats:
@@ -1065,7 +1171,6 @@ class AccLinuxAgent:
                                 cpu = parts[0].replace('%', '')
                                 container_info['cpu_percent'] = float(cpu) if cpu else 0
 
-                                # Parse memory (e.g., "256MiB / 1GiB")
                                 mem_parts = parts[1].split('/')
                                 if len(mem_parts) >= 2:
                                     container_info['memory_usage'] = self._parse_memory(mem_parts[0])
@@ -1074,7 +1179,7 @@ class AccLinuxAgent:
                     container_info['status'] = 'not_found'
 
             except Exception as e:
-                logger.error(f"Error getting container {container_name} status: {e}")
+                logger.error("Error getting container %s status: %s", container_name, e)
 
             containers.append(container_info)
 
@@ -1092,81 +1197,36 @@ class AccLinuxAgent:
                 return float(mem_str.replace('KIB', '').replace('KB', '').strip()) / 1024
             else:
                 return float(mem_str)
-        except:
+        except Exception:
             return 0
-
-    def scan_recent_logs(self, minutes=5):
-        """Scan recent log files for today's logs (all levels).
-
-        EAI log format: [LEVEL][YYYY-MM-DD HH:MM:SS.mmm][source][...] content
-        We collect all log lines from today (INFO/WARN/ERRO/ERROR/FATAL/CRITICAL)
-        so the dashboard can display them with proper level coloring.
-        Only date filtering is applied here; no level filtering.
-        """
-        alerts = []
-        log_path = Path(self.config['log_path'])
-
-        if not log_path.exists():
-            return alerts
-
-        cutoff_time = time.time() - (minutes * 60)
-        today_str = datetime.now().strftime('%Y-%m-%d')
-
-        try:
-            for log_file in log_path.glob('*.log'):
-                if log_file.stat().st_mtime < cutoff_time:
-                    continue
-
-                # grep for today's date only - collect ALL levels
-                cmd = (
-                    'grep "{today}" "{logfile}" | tail -50'
-                ).format(today=today_str, logfile=log_file)
-                output = self.run_command(cmd)
-
-                if output:
-                    for line in output.split('\n'):
-                        line = line.strip()
-                        if not line:
-                            continue
-                        alerts.append({
-                            'file': log_file.name,
-                            'keyword': 'LOG',
-                            'message': line[:200],
-                            'timestamp': datetime.now().isoformat()
-                        })
-        except Exception as e:
-            logger.error("Error scanning logs: {}".format(e))
-
-        return alerts
 
     def get_container_error_logs(self, minutes=5):
         """
-        Get recent logs from Docker containers (all levels).
-        Phase 2: Added to eliminate SSH-based docker logs calls from backend.
-        Uses 'timeout 10' to prevent docker logs from hanging.
-        Collects all log lines (no level filtering) - level is determined by backend.
+        Get recent error logs from Docker containers.
+        Phase 2: Uses 'timeout 10' to prevent docker logs from hanging.
         """
         container_logs = {}
-        for container_name in self.config['containers']:
+        for container_name in self.config.get('containers', []):
             try:
                 cmd = (
-                    f'timeout 10 docker logs {container_name} '
-                    f'--since {minutes}m 2>&1 | tail -50'
-                )
+                    'timeout 10 docker logs %s '
+                    '--since %dm 2>&1 | '
+                    'grep -iE "error|exception|failed" | tail -20'
+                ) % (container_name, minutes)
                 output = self.run_command(cmd)
                 if output:
-                    entries = []
+                    errors = []
                     for line in output.split('\n'):
                         line = line.strip()
                         if line and len(line) > 10:
-                            entries.append({
+                            errors.append({
                                 'message': line[:300],
                                 'timestamp': datetime.now().isoformat()
                             })
-                    if entries:
-                        container_logs[container_name] = entries
+                    if errors:
+                        container_logs[container_name] = errors
             except Exception as e:
-                logger.error(f"Error getting logs for {container_name}: {e}")
+                logger.error("Error getting logs for %s: %s", container_name, e)
         return container_logs
 
     def collect_metrics(self):
@@ -1181,8 +1241,6 @@ class AccLinuxAgent:
                 'disk_usage': self.get_disk_usage()
             },
             'containers': self.get_container_status(),
-            'alerts': self.scan_recent_logs(),
-            # Phase 2: Container error logs for backend _get_linux_error_logs
             'container_error_logs': self.get_container_error_logs()
         }
 
@@ -1195,18 +1253,12 @@ class AccLinuxAgent:
     def report_metrics(self, metrics):
         """Send metrics to monitoring center"""
         try:
-            url = f"{self.server_url}/api/agent/report"
-            response = requests.post(
-                url,
-                json=metrics,
-                headers={'Content-Type': 'application/json'},
-                timeout=10
-            )
-            response.raise_for_status()
+            url = "%s/api/agent/report" % self.server_url
+            http_post_json(url, metrics, timeout=10)
             logger.debug("Metrics reported successfully")
             return True
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error reporting metrics: {e}")
+        except Exception as e:
+            logger.error("Error reporting metrics: %s", e)
             return False
 
     def _start_eai_monitor(self):
@@ -1223,11 +1275,11 @@ class AccLinuxAgent:
         # Determine report URL
         report_url = self.config.get('eai_report_url')
         if not report_url:
-            report_url = f"{self.server_url}/api/agent/eai-logs"
+            report_url = "%s/api/agent/eai-logs" % self.server_url
 
         self._eai_manager = EaiLogMonitorManager(self.config, report_url)
         self._eai_manager.start()
-        logger.info(f"[EAI] EAI log monitoring started, reporting to {report_url}")
+        logger.info("[EAI] EAI log monitoring started, reporting to %s", report_url)
 
     def _stop_eai_monitor(self):
         """Stop EAI log monitoring"""
@@ -1237,8 +1289,8 @@ class AccLinuxAgent:
 
     def run(self):
         """Main agent loop"""
-        logger.info(f"ACC Linux Agent started for server {self.server_id}")
-        logger.info(f"Reporting to {self.server_url}")
+        logger.info("ACC Linux Agent v%s started for server %s", VERSION, self.server_id)
+        logger.info("Reporting to %s", self.server_url)
 
         # Start EAI log monitoring (Phase 3)
         self._start_eai_monitor()
@@ -1250,24 +1302,28 @@ class AccLinuxAgent:
                     self.report_metrics(metrics)
 
                     # Log summary
-                    containers = metrics['containers']
+                    containers = metrics.get('containers', [])
                     running = sum(1 for c in containers if c['status'] == 'running')
                     stopped = len(containers) - running
 
+                    eai_stats = ''
+                    if self._eai_manager:
+                        stats = self._eai_manager.get_stats()
+                        eai_stats = " | EAI: %d total, %d uploaded" % (
+                            stats.get('total_records', 0),
+                            stats.get('uploaded_records', 0)
+                        )
+
                     logger.info(
-                        f"CPU: {metrics['resources']['cpu_usage']}% | "
-                        f"Memory: {metrics['resources']['memory_usage']}% | "
-                        f"Disk: {metrics['resources']['disk_usage']}% | "
-                        f"Containers: {running} running, {stopped} stopped"
+                        "[OK] CPU:%.1f%% MEM:%.1f%% DISK:%.1f%% | Containers: %d up / %d down%s",
+                        metrics['resources']['cpu_usage'],
+                        metrics['resources']['memory_usage'],
+                        metrics['resources']['disk_usage'],
+                        running, stopped, eai_stats
                     )
 
-                    # Alert for stopped containers
-                    for c in containers:
-                        if c['status'] == 'stopped':
-                            logger.warning(f"Container {c['name']} is STOPPED!")
-
                 except Exception as e:
-                    logger.error(f"Error in main loop: {e}")
+                    logger.error("Error in main loop: %s", e)
 
                 time.sleep(self.config['report_interval'])
         finally:
@@ -1275,17 +1331,26 @@ class AccLinuxAgent:
 
 
 def load_config():
-    """Load configuration from file if exists"""
-    config_file = Path('/etc/acc-agent/config.json')
-    if config_file.exists():
-        with open(config_file, 'r') as f:
-            user_config = json.load(f)
-            CONFIG.update(user_config)
-    return CONFIG
+    """Load configuration from agent_config.json if exists, merge with defaults"""
+    config = CONFIG.copy()
+    if CONFIG_FILE.exists():
+        try:
+            with open(str(CONFIG_FILE), 'r', encoding='utf-8') as f:
+                user_config = json.load(f)
+            config.update(user_config)
+            logger.info("Loaded config from %s", CONFIG_FILE)
+        except Exception as e:
+            logger.warning("Failed to load %s: %s, using defaults", CONFIG_FILE, e)
+    else:
+        logger.info("No config file found at %s, using defaults", CONFIG_FILE)
+    return config
 
 
 if __name__ == '__main__':
     config = load_config()
+    # Re-setup logging with config level
+    logger = setup_logging(config.get('log_level', 'INFO'))
+
     agent = AccLinuxAgent(config)
 
     try:
@@ -1293,5 +1358,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logger.info("Agent stopped by user")
     except Exception as e:
-        logger.error(f"Agent error: {e}")
+        logger.error("Agent error: %s", e)
         sys.exit(1)

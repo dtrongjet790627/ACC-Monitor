@@ -14,7 +14,7 @@
       <div class="header-left">
         <span class="header-bracket">[</span>
         <span class="header-icon">></span>
-        <span class="header-text">SYSTEM LOG</span>
+        <span class="header-text">EAI SYSTEM LOG</span>
         <span class="header-bracket">]</span>
       </div>
       <div class="header-right">
@@ -27,10 +27,10 @@
     <div class="log-entries" ref="logContainer"
          @mouseenter="isHovering = true"
          @mouseleave="isHovering = false">
-      <!-- Empty state when no logs -->
+      <!-- Empty state when no EAI logs today -->
       <div v-if="displayLogs.length === 0" class="empty-state">
         <span class="empty-icon">&gt;_</span>
-        <span class="empty-text">Awaiting system connection...</span>
+        <span class="empty-text">今日无日志</span>
         <span class="empty-cursor"></span>
       </div>
       <template v-else>
@@ -89,7 +89,7 @@ const props = defineProps({
   },
   maxEntries: {
     type: Number,
-    default: 25
+    default: 50
   }
 })
 
@@ -111,8 +111,30 @@ const isTyping = ref(false)
 const currentTypingLog = ref(null)
 let typewriterInterval = null
 
+// Get today's date string in YYYY-MM-DD format
+function getTodayDate() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const displayLogs = computed(() => {
-  return props.logs.slice(0, props.maxEntries)
+  const today = getTodayDate()
+  // Filter: only show today's logs (all levels: info/warning/error/critical)
+  return props.logs
+    .filter(log => {
+      // Check date: only today's logs
+      if (log.timestamp) {
+        // timestamp is ISO format like "2026-03-11T14:22:33.000Z"
+        const logDate = log.timestamp.substring(0, 10)
+        return logDate === today
+      }
+      // If no timestamp available, assume it's today (real-time push)
+      return true
+    })
+    .slice(0, props.maxEntries)
 })
 
 // Auto-scroll: smoothly scroll down, loop back to top when reaching bottom
@@ -164,10 +186,10 @@ function startTypewriter(message) {
   }, 25) // 25ms per character for smooth effect
 }
 
-// Watch for new logs and trigger typing animation
-watch(() => props.logs.length, (newCount, oldCount) => {
-  if (newCount > oldCount && props.logs.length > 0) {
-    const newestLog = props.logs[0]
+// Watch for new filtered logs and trigger typing animation
+watch(() => displayLogs.value.length, (newCount, oldCount) => {
+  if (newCount > oldCount && displayLogs.value.length > 0) {
+    const newestLog = displayLogs.value[0]
     isNewEntry.value = true
     currentTypingLog.value = newestLog
     startTypewriter(newestLog.message)
@@ -465,8 +487,26 @@ $void-800: #12121a;
     }
   }
 
+  &.error {
+    border-left-color: $cyber-red;
+    background: rgba($cyber-red, 0.05);
+
+    &.typing {
+      animation: criticalPulse 0.5s ease-in-out 3;
+    }
+
+    &.expanded {
+      background: rgba($cyber-red, 0.08);
+    }
+  }
+
   &.info {
     border-left-color: rgba($cyber-cyan, 0.4);
+    background: rgba($cyber-cyan, 0.02);
+
+    &.expanded {
+      background: rgba($cyber-cyan, 0.06);
+    }
   }
 
   .log-line-number {
@@ -494,14 +534,19 @@ $void-800: #12121a;
       text-shadow: 0 0 8px rgba($cyber-red, 0.6);
     }
 
+    &.error {
+      color: $cyber-red;
+      text-shadow: 0 0 8px rgba($cyber-red, 0.6);
+    }
+
     &.warning {
       color: $cyber-yellow;
       text-shadow: 0 0 8px rgba($cyber-yellow, 0.6);
     }
 
     &.info {
-      color: $cyber-blue;
-      text-shadow: 0 0 5px rgba($cyber-blue, 0.4);
+      color: $cyber-cyan;
+      text-shadow: 0 0 5px rgba($cyber-cyan, 0.4);
     }
   }
 

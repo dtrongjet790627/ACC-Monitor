@@ -1,0 +1,29 @@
+{
+  "server_url": "http://172.17.10.165:5004",
+  "server_id": "163",
+  "report_interval": 30,
+  "containers": [
+    "hulu-eai",
+    "redis"
+  ],
+  "log_path": "/var/eai/logs",
+  "log_level": "INFO",
+  "eai_monitor_enabled": true,
+  "eai_log_files": {
+    "FLOW_DP-EPS\\IPA MES报工接口.log": {
+      "schema": "dpeps1",
+      "description": "DP-EPS IPA"
+    },
+    "FLOW_SMT\\MID-Line2MES报工接口.log": {
+      "schema": "smt2",
+      "description": "SMT Line2"
+    },
+    "FLOW_DP-SMT\\MID\\EPP MES报工接口.log": {
+      "schema": "dpepp1",
+      "description": "DP-SMT MID EPP"
+    }
+  },
+  "eai_batch_size": 10,
+  "eai_batch_timeout": 5,
+  "eai_catchup_lines": 1000
+}
