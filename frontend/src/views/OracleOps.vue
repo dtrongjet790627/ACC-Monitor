@@ -773,8 +773,32 @@ const modalServerConfig = computed(() => {
   return ORACLE_SERVER_CONFIG[modalServerId.value] || { shortName: 'N/A', ip: '', name: '' }
 })
 
+// Fixed display order for tablespaces
+// XE库(164/153/168/193/194): ACC_DATA排最前(其余IPLANT_*不存在,自动跳过)
+// 165共用服务器(standard): IPLANT_*业务表空间排最前
+const TABLESPACE_ORDER = [
+  'ACC_DATA',           // XE库的业务表空间
+  'IPLANT_DPEPP1_DATA', // 165-电控一线DP EPP1
+  'IPLANT_DPEPS_DATA',  // 165-总成DP EPS1
+  'IPLANT_SMT2_DATA',   // 165-电控二线SMT Line2
+  'IPLANT_CEPS1_DATA',  // 165-C EPS
+  'IPLANT_LEPP1_DATA',  // 165-L EPP
+  'IPLANT_WEB_DATA',    // 165-Web
+  'SYSTEM',
+  'SYSAUX',
+  'USERS',
+]
+
 const modalFilteredTablespaces = computed(() => {
-  return store.tablespaces.filter(ts => ts.server_id === modalServerId.value)
+  const list = store.tablespaces.filter(ts => ts.server_id === modalServerId.value)
+  return list.sort((a, b) => {
+    const idxA = TABLESPACE_ORDER.indexOf(a.tablespace_name)
+    const idxB = TABLESPACE_ORDER.indexOf(b.tablespace_name)
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB
+    if (idxA !== -1) return -1
+    if (idxB !== -1) return 1
+    return a.tablespace_name.localeCompare(b.tablespace_name)
+  })
 })
 
 function getDisplayPct(ts) {
@@ -866,6 +890,7 @@ function renderModalBarChart() {
     yAxis: {
       type: 'category',
       data: names,
+      inverse: true,
       axisLabel: { color: '#00d4aa', fontFamily: 'Consolas', fontSize: 11 },
       axisLine: { lineStyle: { color: 'rgba(0, 212, 170, 0.2)' } },
     },

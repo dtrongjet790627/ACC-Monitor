@@ -57,12 +57,20 @@ class OracleOpsService:
 
         # Store tablespace data
         # usage_pct is now uniformly maxsize-based (used / maxsize)
+        # Filter out invalid records: empty name, 'UNKNOWN', or zero max_mb
         tablespaces = data.get('tablespaces', [])
         for ts in tablespaces:
+            ts_name = (ts.get('tablespace_name') or '').strip()
+            if not ts_name or ts_name.upper() == 'UNKNOWN':
+                logger.warning(
+                    "Skipping invalid tablespace record from server %s: name='%s'",
+                    server_id, ts_name
+                )
+                continue
             record = OpsTablespaceData(
                 server_id=server_id,
                 server_name=server_name,
-                tablespace_name=ts.get('tablespace_name', ''),
+                tablespace_name=ts_name,
                 used_mb=ts.get('used_mb', 0),
                 max_mb=ts.get('max_mb', 0),
                 usage_pct=ts.get('usage_pct', 0),
@@ -506,13 +514,35 @@ class OracleOpsService:
         Clean up old tablespace data and alert records to prevent database bloat.
         Keeps the last N days of data. Called periodically or on startup.
         Uses datetime.now() since agent data is stored in local time.
+
+        Safety: if cleanup would remove ALL tablespace data (no recent data exists),
+        skip tablespace cleanup to avoid leaving the dashboard empty. This handles
+        the case where the monitor was offline for more than `days` and agents
+        could not report new data.
         """
         cutoff = datetime.now() - timedelta(days=days)
         try:
-            # Delete old tablespace records
-            ts_deleted = OpsTablespaceData.query.filter(
-                OpsTablespaceData.collected_at < cutoff
-            ).delete(synchronize_session=False)
+            # Safety check: count how many records would survive after cleanup
+            surviving_count = OpsTablespaceData.query.filter(
+                OpsTablespaceData.collected_at >= cutoff
+            ).count()
+
+            ts_deleted = 0
+            if surviving_count > 0:
+                # Safe to delete old records since recent data exists
+                ts_deleted = OpsTablespaceData.query.filter(
+                    OpsTablespaceData.collected_at < cutoff
+                ).delete(synchronize_session=False)
+            else:
+                # No recent data would survive - skip cleanup to preserve display
+                total_count = OpsTablespaceData.query.count()
+                if total_count > 0:
+                    logger.warning(
+                        "Data cleanup SKIPPED for tablespaces: all %d records are older "
+                        "than %d days. Agents may be offline or unable to report. "
+                        "Keeping old data to avoid empty dashboard.",
+                        total_count, days
+                    )
 
             # Delete old alert records (keep 30 days)
             alert_cutoff = datetime.now() - timedelta(days=30)

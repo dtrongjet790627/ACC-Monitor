@@ -32,6 +32,9 @@ class MonitorScheduler:
         """Initialize scheduler with Flask app"""
         self.app = app
 
+        # Local collector instances cache: {server_id: LocalCollector}
+        self._local_collectors = {}
+
         # Add jobs
         self.scheduler.add_job(
             func=self._check_processes,
@@ -40,6 +43,17 @@ class MonitorScheduler:
             name='Check server processes',
             replace_existing=True,
             max_instances=2  # Allow overlap to avoid skipped checks
+        )
+
+        # Local metrics collection - runs every 25 seconds (slightly before
+        # _check_processes at 30s) so agent_data_service has fresh data
+        self.scheduler.add_job(
+            func=self._collect_local_metrics,
+            trigger=IntervalTrigger(seconds=25),
+            id='collect_local_metrics',
+            name='Collect local server metrics',
+            replace_existing=True,
+            max_instances=1
         )
 
         self.scheduler.add_job(
@@ -199,6 +213,46 @@ class MonitorScheduler:
                     'last_check': datetime.utcnow().isoformat()
                 }
                 broadcast_server_status(status)
+
+    def _collect_local_metrics(self):
+        """
+        Collect metrics locally for servers with "local_collect": true.
+        This replaces the need for a standalone Agent on those servers.
+        Data is injected via agent_data_service.update_agent_data() so it
+        appears identical to data received from a remote Agent.
+        """
+        with self.app.app_context():
+            from app.services.local_collector import LocalCollector
+            from app.services.agent_data_service import agent_data_service
+
+            for server_id, server_config in SERVERS.items():
+                if not server_config.get("local_collect", False):
+                    continue
+
+                try:
+                    # Lazily create collector instance (cached)
+                    if server_id not in self._local_collectors:
+                        self._local_collectors[server_id] = LocalCollector(
+                            server_id, server_config
+                        )
+
+                    collector = self._local_collectors[server_id]
+                    data = collector.collect()
+
+                    # Inject into agent_data_service (same path as HTTP POST)
+                    agent_data_service.update_agent_data(server_id, data)
+
+                    logger.debug(
+                        f"[LocalCollector] {server_id}: "
+                        f"CPU={data['resources']['cpu_usage']}% "
+                        f"MEM={data['resources']['memory_usage']}% "
+                        f"DISK={data['resources']['disk_usage']}%"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"[LocalCollector] Error collecting metrics for "
+                        f"server {server_id}: {e}"
+                    )
 
     def _check_databases(self):
         """Check all database status"""
