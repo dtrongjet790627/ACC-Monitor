@@ -240,16 +240,43 @@ def register_manual_backup():
         server_name = data.get('server_name',
                                ORACLE_SERVERS.get(server_id, {}).get('name', ''))
 
+        backup_type = data.get('backup_type', 'manual')
+        started_at = oracle_ops_service._parse_dt(data.get('started_at')) or datetime.now()
+        finished_at = oracle_ops_service._parse_dt(data.get('finished_at')) or datetime.now()
+
+        # 去重：检查是否已存在相同 server_id + backup_type + started_at 的记录
+        existing = OpsBackupRecord.query.filter_by(
+            server_id=server_id,
+            backup_type=backup_type,
+            started_at=started_at
+        ).first()
+
+        if existing:
+            # 已存在，更新而非重复插入
+            existing.status = data.get('status', 'success')
+            existing.rows_exported = data.get('rows_exported', 0)
+            existing.file_size_mb = data.get('file_size_mb', 0)
+            existing.file_path = data.get('file_path', '')
+            existing.finished_at = finished_at
+            existing.error_msg = data.get('error_msg')
+            db.session.commit()
+            return jsonify({
+                'code': 200,
+                'message': 'Backup record updated (duplicate prevented)',
+                'record_id': existing.id,
+                'timestamp': datetime.now().isoformat()
+            })
+
         record = OpsBackupRecord(
             server_id=server_id,
             server_name=server_name,
-            backup_type=data.get('backup_type', 'manual'),
+            backup_type=backup_type,
             status=data.get('status', 'success'),
             rows_exported=data.get('rows_exported', 0),
             file_size_mb=data.get('file_size_mb', 0),
             file_path=data.get('file_path', ''),
-            started_at=oracle_ops_service._parse_dt(data.get('started_at')) or datetime.now(),
-            finished_at=oracle_ops_service._parse_dt(data.get('finished_at')) or datetime.now(),
+            started_at=started_at,
+            finished_at=finished_at,
             error_msg=data.get('error_msg')
         )
         db.session.add(record)
